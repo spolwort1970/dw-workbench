@@ -1,6 +1,6 @@
 "use strict";
 
-const { app, BrowserWindow, dialog } = require("electron");
+const { app, BrowserWindow, dialog, Menu } = require("electron");
 const { spawn, execSync }             = require("child_process");
 const path   = require("path");
 const fs     = require("fs");
@@ -294,8 +294,6 @@ function createMainWindow() {
 
   win.loadURL(`http://localhost:${PORT}`);
   win.once("ready-to-show", () => win.show());
-  // Remove default menu bar
-  win.setMenuBarVisibility(false);
   return win;
 }
 
@@ -332,6 +330,9 @@ app.whenReady().then(async () => {
   // 4. Open main window, close loading screen
   createMainWindow();
   if (!loadingWin.isDestroyed()) loadingWin.close();
+
+  // Suppress the default Electron menu bar
+  Menu.setApplicationMenu(null);
 });
 
 app.on("window-all-closed", () => {

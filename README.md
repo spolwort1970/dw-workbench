@@ -25,8 +25,9 @@ A local DataWeave workbench with a Mule-style flow simulator. Designed for reaso
 |---|---|
 | Frontend | React + TypeScript + Vite |
 | Editor | Monaco Editor (with custom DW syntax + themes) |
-| Backend | FastAPI (Python) |
-| DW Execution | DW CLI (local subprocess) |
+| Backend | FastAPI (Python) + uvicorn |
+| DW Execution | DW CLI (local subprocess, auto-downloaded on first run) |
+| Desktop Shell | Electron 31 |
 | Persistence | File-based local projects |
 
 ---
@@ -60,6 +61,7 @@ A local DataWeave workbench with a Mule-style flow simulator. Designed for reaso
 | Transform Message | Core |
 | Set Variable | Core |
 | Logger | Core |
+| HTTP Request | Core |
 | Flow Reference | Core |
 | Choice | Scope |
 | For Each | Scope |
@@ -114,26 +116,43 @@ A local DataWeave workbench with a Mule-style flow simulator. Designed for reaso
 
 ---
 
-## Setup
+## Distribution (Windows)
 
-### Backend
-```bash
-cd backend
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+### Run the pre-built app
+
+Unzip `DW-Workbench-win32-x64.zip` and double-click `DW Workbench.exe`. No installer required.
+
+On first launch the app automatically downloads the DataWeave CLI from GitHub and stores it at `%APPDATA%\dw-workbench\dw-cli\`. Subsequent launches reuse the cached CLI.
+
+### Build from source
+
+Requirements: Node.js 18+, Python 3.11+, a virtual environment at `backend/.venv`.
+
+```bat
+build.bat
 ```
 
-### Frontend
+Four steps run automatically:
+1. `frontend/` — `npm run build` → `frontend/dist/`
+2. `backend/` — PyInstaller → `backend/dist/server/` (self-contained exe + dependencies)
+3. `electron/` — `@electron/packager` → `electron/dist/DW Workbench-win32-x64/`
+4. PowerShell `Compress-Archive` → `electron/dist/DW-Workbench-win32-x64.zip`
+
+### Development mode
+
 ```bash
+# Terminal 1 — Backend
+cd backend
+.venv\Scripts\uvicorn app.main:app --reload --port 8000
+
+# Terminal 2 — Frontend
 cd frontend
 npm install
-npm run dev
+npm run dev   # http://localhost:5173
 ```
 
-### DW CLI
-The DW CLI must be installed and available on `PATH` as `dw`. Download from [MuleSoft](https://docs.mulesoft.com/dataweave/latest/dataweave-cli).
+### DW CLI (dev mode)
+The DW CLI must be installed and available on `PATH` as `dw`. Download from [MuleSoft](https://docs.mulesoft.com/dataweave/latest/dataweave-cli). In the packaged app it is downloaded automatically.
 
 ---
 
@@ -158,3 +177,21 @@ The `flow.json` structure uses a custom processor tree format — not React Flow
 - Backend execution walks the processor tree recursively via `_run_processor_list`, which handles all scope types (choice, for-each, try) uniformly.
 - Debug sessions are managed server-side in `debug_runner.py` with a session ID. Each step call advances one processor and returns the trace + current event.
 - DW expressions are evaluated by shelling out to the DW CLI with temp files. The output is raw stdout (no JSON parsing) to preserve DataWeave's duplicate-key behavior.
+
+### Packaged app runtime flow
+
+```
+Electron main process
+  ├── Resolves DW CLI (config.json → PATH → auto-download)
+  ├── Spawns backend/dist/server/server.exe with DW_CLI + DW_PORT env vars
+  ├── Polls http://localhost:8000/health (up to 20 s)
+  └── Opens BrowserWindow → http://localhost:8000
+
+server.exe (PyInstaller onedir)
+  ├── Sets STATIC_DIR = _internal/static  (Vite build)
+  └── Runs uvicorn on 127.0.0.1:DW_PORT
+        ├── /execute, /flow/run, /debug/*  (API routes, registered first)
+        └── /  (StaticFiles, html=True — catches all other routes)
+```
+
+The `About DW Workbench` dialog is available from the **Help** menu in the menu bar.

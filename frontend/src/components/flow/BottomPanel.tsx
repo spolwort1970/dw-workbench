@@ -135,7 +135,7 @@ export default function BottomPanel({ selection, allFlows, theme, lastDebugTrace
       {/* ── Header ── */}
       <div className="bottom-panel__header">
         <span className="bottom-panel__title">
-          {!selection && "Select a node to configure it"}
+          {!selection && allFlows.length > 0 && "Select a node to configure it"}
           {selection?.kind === "source"    && `Input — ${selection.flow.name}`}
           {selection?.kind === "processor" && selection.proc.displayName}
         </span>

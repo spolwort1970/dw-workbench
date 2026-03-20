@@ -225,6 +225,7 @@
   opacity: 1;
 }
 
+
 /* ── Layout ──────────────────────────────────────────────────── */
 .app-body {
   display: flex;
@@ -553,6 +554,7 @@
   font-size: 13px;
   color: var(--text);
   line-height: 1.6;
+  white-space: pre-line;
 }
 
 .dialog-input {
@@ -741,7 +743,7 @@
   flex: 1;
   position: relative;
   overflow: auto;
-  background: var(--bg-deep);
+  background-color: var(--bg-deep);
   background-image: radial-gradient(var(--border) 1px, transparent 1px);
   background-size: 18px 18px;
 }
