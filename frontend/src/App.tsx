@@ -9,6 +9,7 @@ import LoadPayloadButton from "./components/LoadPayloadButton";
 import ImportExport, { type WorkspaceState } from "./components/ImportExport";
 import FileMenu from "./components/FileMenu";
 import FlowCanvas, { type FlowCanvasHandle } from "./components/flow/FlowCanvas";
+import MaxPanel from "./components/MaxPanel";
 import MimeTypeDropdown, { MIME_TYPES, type MimeTypeOption } from "./components/MimeTypeDropdown";
 import { registerThemes, isLightTheme, getThemeBg } from "./monacoThemes";
 import { DW_LANGUAGE_ID } from "./dwLanguage";
@@ -446,6 +447,7 @@ function AppInner() {
       </div>
 
       {activeTab === "script" && (
+        <div className="script-tab-root">
         <div className="app-body">
 
           {/* Payload column */}
@@ -587,6 +589,14 @@ function AppInner() {
             </div>}
           </div>
 
+        </div>
+        <MaxPanel context={{
+          script,
+          payload: payloadText,
+          output: result?.success ? String(result.output ?? "") : undefined,
+          error: result?.error || fetchError || undefined,
+          project_name: projectName,
+        }} />
         </div>
       )}
 

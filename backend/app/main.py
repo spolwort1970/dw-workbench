@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.execute_dw import router as execute_dw_router
 from app.api.execute_flow import router as execute_flow_router
 from app.api.debug_flow import router as debug_router
+from app.api.max_chat import router as max_router
 
 app = FastAPI(title="DW Workbench API", version="0.1.0")
 
@@ -19,6 +20,7 @@ app.add_middleware(
 app.include_router(execute_dw_router)
 app.include_router(execute_flow_router)
 app.include_router(debug_router)
+app.include_router(max_router)
 
 
 @app.get("/health")

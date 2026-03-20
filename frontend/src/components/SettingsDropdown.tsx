@@ -18,6 +18,8 @@ export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFon
   const [open, setOpen] = useState(false);
   const [themeExpanded, setThemeExpanded] = useState(false);
   const [fontExpanded, setFontExpanded] = useState(false);
+  const [aiExpanded, setAiExpanded] = useState(false);
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem("dw-max-api-key") ?? "");
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -92,6 +94,34 @@ export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFon
                   {f.label}
                 </button>
               ))}
+            </div>
+          )}
+
+          {/* AI (Max) row */}
+          <button
+            className="settings-row"
+            onClick={() => setAiExpanded((v) => !v)}
+          >
+            <span className="settings-row-label">AI (Max)</span>
+            <span className="settings-row-value">{apiKey ? "Key set ✓" : "No key"}</span>
+            <span className="settings-row-chevron">{aiExpanded ? "▾" : "▸"}</span>
+          </button>
+
+          {aiExpanded && (
+            <div className="ai-key-section">
+              <label className="ai-key-label">Anthropic API Key</label>
+              <input
+                type="password"
+                className="ai-key-input"
+                value={apiKey}
+                onChange={(e) => {
+                  setApiKey(e.target.value);
+                  localStorage.setItem("dw-max-api-key", e.target.value);
+                }}
+                placeholder="sk-ant-..."
+                autoComplete="off"
+                spellCheck={false}
+              />
             </div>
           )}
         </div>

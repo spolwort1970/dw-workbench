@@ -2,6 +2,7 @@ import type {
   SimEvent, ExecuteFlowResponse,
   StartDebugResponse, StepDebugResponse, EvaluateDebugResponse,
 } from "../types/execution";
+import type { MaxChatRequest, MaxSummarizeRequest, MaxSummarizeResponse } from "../types/max";
 
 const BASE_URL = "http://localhost:8000";
 
@@ -95,5 +96,52 @@ export async function executeDW(req: ExecuteDWRequest): Promise<ExecuteDWRespons
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}: ${await res.text()}`);
   }
+  return res.json();
+}
+
+// ── Max AI assistant ───────────────────────────────────────────────────────────
+
+export async function streamMaxChat(
+  req: MaxChatRequest,
+  onChunk: (text: string) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const res = await fetch(`${BASE_URL}/max/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+    signal,
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const data = line.slice(6);
+      if (data === "[DONE]") return;
+      try {
+        const parsed = JSON.parse(data);
+        if (parsed.text) onChunk(parsed.text);
+      } catch { /* ignore malformed chunk */ }
+    }
+  }
+}
+
+export async function maxSummarize(req: MaxSummarizeRequest): Promise<MaxSummarizeResponse> {
+  const res = await fetch(`${BASE_URL}/max/summarize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
   return res.json();
 }

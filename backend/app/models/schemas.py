@@ -107,3 +107,49 @@ class EvaluateDebugResponse(BaseModel):
     result: Any = None
     output: str = ""
     error: str = ""
+
+
+# ── Max AI assistant ───────────────────────────────────────────────────────────
+
+class MaxContentPart(BaseModel):
+    """A single part of a message — text or base64 image."""
+    type: str  # "text" | "image"
+    text: str | None = None
+    # For images: base64-encoded data and media type
+    data: str | None = None
+    media_type: str | None = None  # e.g. "image/png"
+
+
+class MaxMessage(BaseModel):
+    role: str  # "user" | "assistant"
+    content: list[MaxContentPart]
+
+
+class MaxContext(BaseModel):
+    """Optional workspace snapshot sent with each request."""
+    script: str | None = None
+    payload: str | None = None
+    output: str | None = None
+    error: str | None = None
+    flow_summary: str | None = None
+    project_name: str | None = None
+    session_summary: str | None = None
+    global_prefs: str | None = None
+    project_prefs: str | None = None
+
+
+class MaxChatRequest(BaseModel):
+    api_key: str
+    messages: list[MaxMessage]
+    context: MaxContext = MaxContext()
+    model: str = "claude-sonnet-4-6"
+
+
+class MaxSummarizeRequest(BaseModel):
+    api_key: str
+    messages: list[MaxMessage]
+    existing_summary: str | None = None
+
+
+class MaxSummarizeResponse(BaseModel):
+    summary: str
