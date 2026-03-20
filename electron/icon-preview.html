@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  body { background: #888; display: flex; flex-wrap: wrap; gap: 40px; padding: 40px; font-family: sans-serif; align-items: flex-start; }
+  .group { display: flex; flex-direction: column; gap: 16px; }
+  .group-label { color: white; font-size: 13px; font-weight: bold; margin-bottom: 4px; }
+  .row { display: flex; gap: 20px; align-items: flex-end; }
+  .swatch { display: flex; flex-direction: column; align-items: center; gap: 6px; color: white; font-size: 11px; }
+  .on-white { background:#fff; padding:12px; border-radius:8px; }
+  .on-white span { color: #333; }
+</style>
+</head>
+<body>
+
+<div class="group">
+  <div class="group-label">Option 3 — D &amp; W on nodes, 2.0 ghost behind</div>
+  <div class="row">
+
+    <!-- 256px -->
+    <div class="swatch">
+    <svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="bg3a" cx="40%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="#1e2a3a"/>
+          <stop offset="100%" stop-color="#0a0f1a"/>
+        </radialGradient>
+        <filter id="glow3a">
+          <feGaussianBlur stdDeviation="3" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="textglow">
+          <feGaussianBlur stdDeviation="6" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <!-- Background -->
+      <circle cx="128" cy="128" r="124" fill="url(#bg3a)"/>
+      <circle cx="128" cy="128" r="124" fill="none" stroke="#00a1df" stroke-width="1.5" opacity="0.3"/>
+      <!-- Ghost 2.0 behind everything -->
+      <text x="128" y="155" text-anchor="middle" font-family="Consolas, 'Courier New', monospace"
+            font-size="120" font-weight="700" fill="#39ff14" opacity="0.22"
+            filter="url(#textglow)">2.0</text>
+      <!-- Subtle arcs -->
+      <path d="M 88 56 Q 128 36 168 88" fill="none" stroke="#00a1df" stroke-width="1.5" opacity="0.25" stroke-dasharray="4 6"/>
+      <path d="M 88 168 Q 128 220 168 200" fill="none" stroke="#00a1df" stroke-width="1.5" opacity="0.25" stroke-dasharray="4 6"/>
+      <!-- Diagonal beam -->
+      <line x1="176" y1="80" x2="80" y2="176" stroke="#00a1df" stroke-width="6" stroke-linecap="round" filter="url(#glow3a)"/>
+      <!-- Top-left node with D -->
+      <circle cx="88" cy="88" r="32" fill="none" stroke="#00a1df" stroke-width="5" filter="url(#glow3a)"/>
+      <text x="88" y="96" text-anchor="middle" font-family="Consolas, 'Courier New', monospace" font-size="28" font-weight="700" fill="#00a1df">D</text>
+      <!-- Bottom-right node with W -->
+      <circle cx="168" cy="168" r="32" fill="none" stroke="#00a1df" stroke-width="5" filter="url(#glow3a)"/>
+      <text x="168" y="176" text-anchor="middle" font-family="Consolas, 'Courier New', monospace" font-size="28" font-weight="700" fill="#00a1df">W</text>
+    </svg>
+    <span>256px</span>
+    </div>
+
+    <!-- 128px -->
+    <div class="swatch">
+    <svg width="128" height="128" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="bg3b" cx="40%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="#1e2a3a"/>
+          <stop offset="100%" stop-color="#0a0f1a"/>
+        </radialGradient>
+        <filter id="glow3b">
+          <feGaussianBlur stdDeviation="3" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="textglow3b">
+          <feGaussianBlur stdDeviation="6" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <circle cx="128" cy="128" r="124" fill="url(#bg3b)"/>
+      <circle cx="128" cy="128" r="124" fill="none" stroke="#00a1df" stroke-width="1.5" opacity="0.3"/>
+      <text x="128" y="155" text-anchor="middle" font-family="Consolas, 'Courier New', monospace"
+            font-size="120" font-weight="700" fill="#39ff14" opacity="0.22" filter="url(#textglow3b)">2.0</text>
+      <line x1="176" y1="80" x2="80" y2="176" stroke="#00a1df" stroke-width="6" stroke-linecap="round" filter="url(#glow3b)"/>
+      <circle cx="88" cy="88" r="32" fill="none" stroke="#00a1df" stroke-width="5" filter="url(#glow3b)"/>
+      <text x="88" y="96" text-anchor="middle" font-family="Consolas, 'Courier New', monospace" font-size="28" font-weight="700" fill="#00a1df">D</text>
+      <circle cx="168" cy="168" r="32" fill="none" stroke="#00a1df" stroke-width="5" filter="url(#glow3b)"/>
+      <text x="168" y="176" text-anchor="middle" font-family="Consolas, 'Courier New', monospace" font-size="28" font-weight="700" fill="#00a1df">W</text>
+    </svg>
+    <span>128px</span>
+    </div>
+
+    <!-- 64px -->
+    <div class="swatch">
+    <svg width="64" height="64" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="bg3c" cx="40%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="#1e2a3a"/>
+          <stop offset="100%" stop-color="#0a0f1a"/>
+        </radialGradient>
+      </defs>
+      <circle cx="128" cy="128" r="124" fill="url(#bg3c)"/>
+      <text x="128" y="155" text-anchor="middle" font-family="Consolas, 'Courier New', monospace"
+            font-size="120" font-weight="700" fill="#39ff14" opacity="0.22">2.0</text>
+      <line x1="176" y1="80" x2="80" y2="176" stroke="#00a1df" stroke-width="6" stroke-linecap="round"/>
+      <circle cx="88" cy="88" r="32" fill="none" stroke="#00a1df" stroke-width="6"/>
+      <text x="88" y="96" text-anchor="middle" font-family="Consolas, 'Courier New', monospace" font-size="28" font-weight="700" fill="#00a1df">D</text>
+      <circle cx="168" cy="168" r="32" fill="none" stroke="#00a1df" stroke-width="6"/>
+      <text x="168" y="176" text-anchor="middle" font-family="Consolas, 'Courier New', monospace" font-size="28" font-weight="700" fill="#00a1df">W</text>
+    </svg>
+    <span>64px</span>
+    </div>
+
+    <!-- 32px -->
+    <div class="swatch">
+    <svg width="32" height="32" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="bg3d" cx="40%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="#1e2a3a"/>
+          <stop offset="100%" stop-color="#0a0f1a"/>
+        </radialGradient>
+      </defs>
+      <circle cx="128" cy="128" r="124" fill="url(#bg3d)"/>
+      <line x1="176" y1="80" x2="80" y2="176" stroke="#00a1df" stroke-width="9" stroke-linecap="round"/>
+      <circle cx="88" cy="88" r="32" fill="none" stroke="#00a1df" stroke-width="7"/>
+      <text x="88" y="96" text-anchor="middle" font-family="Consolas, 'Courier New', monospace" font-size="28" font-weight="700" fill="#00a1df">D</text>
+      <circle cx="168" cy="168" r="32" fill="none" stroke="#00a1df" stroke-width="7"/>
+      <text x="168" y="176" text-anchor="middle" font-family="Consolas, 'Courier New', monospace" font-size="28" font-weight="700" fill="#00a1df">W</text>
+    </svg>
+    <span>32px</span>
+    </div>
+
+    <!-- 16px -->
+    <div class="swatch">
+    <svg width="16" height="16" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="bg3e" cx="40%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="#1e2a3a"/>
+          <stop offset="100%" stop-color="#0a0f1a"/>
+        </radialGradient>
+      </defs>
+      <circle cx="128" cy="128" r="124" fill="url(#bg3e)"/>
+      <line x1="176" y1="80" x2="80" y2="176" stroke="#00a1df" stroke-width="12" stroke-linecap="round"/>
+      <circle cx="88" cy="88" r="32" fill="none" stroke="#00a1df" stroke-width="9"/>
+      <text x="88" y="96" text-anchor="middle" font-family="Consolas, 'Courier New', monospace" font-size="28" font-weight="700" fill="#00a1df">D</text>
+      <circle cx="168" cy="168" r="32" fill="none" stroke="#00a1df" stroke-width="9"/>
+      <text x="168" y="176" text-anchor="middle" font-family="Consolas, 'Courier New', monospace" font-size="28" font-weight="700" fill="#00a1df">W</text>
+    </svg>
+    <span>16px</span>
+    </div>
+
+    <!-- on white -->
+    <div class="swatch on-white">
+    <svg width="96" height="96" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="bg3w" cx="40%" cy="35%" r="65%">
+          <stop offset="0%" stop-color="#1e2a3a"/>
+          <stop offset="100%" stop-color="#0a0f1a"/>
+        </radialGradient>
+        <filter id="glow3w">
+          <feGaussianBlur stdDeviation="3" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="textglow3w">
+          <feGaussianBlur stdDeviation="6" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <circle cx="128" cy="128" r="124" fill="url(#bg3w)"/>
+      <circle cx="128" cy="128" r="124" fill="none" stroke="#00a1df" stroke-width="1.5" opacity="0.3"/>
+      <text x="128" y="155" text-anchor="middle" font-family="Consolas, 'Courier New', monospace"
+            font-size="120" font-weight="700" fill="#39ff14" opacity="0.22" filter="url(#textglow3w)">2.0</text>
+      <path d="M 88 56 Q 128 36 168 88" fill="none" stroke="#00a1df" stroke-width="1.5" opacity="0.25" stroke-dasharray="4 6"/>
+      <path d="M 88 168 Q 128 220 168 200" fill="none" stroke="#00a1df" stroke-width="1.5" opacity="0.25" stroke-dasharray="4 6"/>
+      <line x1="176" y1="80" x2="80" y2="176" stroke="#00a1df" stroke-width="6" stroke-linecap="round" filter="url(#glow3w)"/>
+      <circle cx="88" cy="88" r="32" fill="none" stroke="#00a1df" stroke-width="5" filter="url(#glow3w)"/>
+      <text x="88" y="96" text-anchor="middle" font-family="Consolas, 'Courier New', monospace" font-size="28" font-weight="700" fill="#00a1df">D</text>
+      <circle cx="168" cy="168" r="32" fill="none" stroke="#00a1df" stroke-width="5" filter="url(#glow3w)"/>
+      <text x="168" y="176" text-anchor="middle" font-family="Consolas, 'Courier New', monospace" font-size="28" font-weight="700" fill="#00a1df">W</text>
+    </svg>
+    <span>on white</span>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

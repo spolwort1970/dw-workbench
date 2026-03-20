@@ -13,10 +13,10 @@
 }
 
 .app[data-theme="light"] {
-  --bg-base:      #f8f8f2;
-  --bg-surface:   #efefef;
-  --bg-deep:      #e0e0e0;
-  --border:       #c8c8c8;
+  --bg-base:      #f0f0f0;
+  --bg-surface:   #e8e8e8;
+  --bg-deep:      #d8d8d8;
+  --border:       #888888;
   --text:         #24292e;
   --text-muted:   #6a737d;
   --text-faint:   #aaaaaa;
@@ -744,8 +744,12 @@
   position: relative;
   overflow: auto;
   background-color: var(--bg-deep);
-  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-image: radial-gradient(var(--border) 1.5px, transparent 1.5px);
   background-size: 18px 18px;
+}
+
+.app[data-theme="light"] .flow-canvas-area {
+  background-image: radial-gradient(rgba(0,0,0,0.35) 1.5px, transparent 1.5px);
 }
 
 
