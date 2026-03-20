@@ -126,6 +126,7 @@ export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFon
                 onChange={(e) => {
                   setApiKey(e.target.value);
                   localStorage.setItem("dw-max-api-key", e.target.value);
+                  window.dispatchEvent(new CustomEvent("dw-api-key-changed"));
                 }}
                 placeholder="sk-ant-..."
                 autoComplete="off"

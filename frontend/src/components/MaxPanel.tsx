@@ -26,13 +26,20 @@ export default function MaxPanel({ context }: Props) {
   const [streaming, setStreaming] = useState(false);
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
 
+  const [apiKey, setApiKey] = useState(() => localStorage.getItem("dw-max-api-key") ?? "");
+
   const abortRef = useRef<AbortController | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const autoSummaryTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const apiKey = () => localStorage.getItem("dw-max-api-key") ?? "";
+  // Sync when the user saves a key in Settings (same window — storage event won't fire)
+  useEffect(() => {
+    const handler = () => setApiKey(localStorage.getItem("dw-max-api-key") ?? "");
+    window.addEventListener("dw-api-key-changed", handler);
+    return () => window.removeEventListener("dw-api-key-changed", handler);
+  }, []);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -50,7 +57,7 @@ export default function MaxPanel({ context }: Props) {
   // Auto-summary timer
   useEffect(() => {
     autoSummaryTimerRef.current = setInterval(() => {
-      if (messages.length > 0 && apiKey()) {
+      if (messages.length > 0 && apiKey) {
         doSummarize(false);
       }
     }, AUTO_SUMMARY_INTERVAL_MS);
@@ -60,7 +67,7 @@ export default function MaxPanel({ context }: Props) {
   }, [messages]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const doSummarize = useCallback(async (clearAfter: boolean) => {
-    const key = apiKey();
+    const key = apiKey;
     if (!key || messages.length === 0) return;
     try {
       const res = await maxSummarize({
@@ -122,7 +129,7 @@ export default function MaxPanel({ context }: Props) {
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text && pendingImages.length === 0) return;
-    const key = apiKey();
+    const key = apiKey;
     if (!key) return;
 
     const userContent: MaxContentPart[] = [
@@ -216,7 +223,7 @@ export default function MaxPanel({ context }: Props) {
     await doSummarize(true);
   }, [doSummarize]);
 
-  const key = apiKey();
+  const key = apiKey;
 
   return (
     <div className={`max-panel ${collapsed ? "max-panel--collapsed" : ""}`}
