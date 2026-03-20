@@ -61,11 +61,11 @@ if errorlevel 1 (
 :: ── Step 4: Zip the output ────────────────────────────────────────────────────
 echo.
 echo [4/4] Creating distributable ZIP...
-call npm run zip
-if errorlevel 1 (
-    echo       Warning: ZIP creation failed (PowerShell may not be available). Folder output still usable.
-)
 cd ..
+powershell -NoProfile -Command "Compress-Archive -Path 'electron\dist\DW Workbench-win32-x64' -DestinationPath 'electron\dist\DW-Workbench-win32-x64.zip' -Force"
+if errorlevel 1 (
+    echo       Warning: ZIP creation failed. Folder output still usable.
+)
 
 echo.
 echo ============================================================
