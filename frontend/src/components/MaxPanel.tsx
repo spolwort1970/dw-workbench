@@ -46,13 +46,6 @@ export default function MaxPanel({ context }: Props) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Auto-resize textarea
-  useEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-  }, [input]);
 
   // Auto-summary timer
   useEffect(() => {
@@ -236,10 +229,14 @@ export default function MaxPanel({ context }: Props) {
 
       {/* Header */}
       <div className="max-header">
-        <span className="max-title">
-          <MaxIcon />
+        <button
+          className="max-title-btn"
+          onClick={() => setCollapsed((v) => !v)}
+          title={collapsed ? "Expand Max" : "Collapse Max"}
+        >
+          <span className="max-title-caret">{collapsed ? "▸" : "▾"}</span>
           Max
-        </span>
+        </button>
         {!collapsed && (
           <div className="max-header-actions">
             {sessionSummary && (
@@ -253,13 +250,6 @@ export default function MaxPanel({ context }: Props) {
             </button>
           </div>
         )}
-        <button
-          className="max-collapse-btn"
-          onClick={() => setCollapsed((v) => !v)}
-          title={collapsed ? "Expand Max" : "Collapse Max"}
-        >
-          {collapsed ? "▴" : "▾"}
-        </button>
       </div>
 
       {!collapsed && (
@@ -331,13 +321,6 @@ export default function MaxPanel({ context }: Props) {
               style={{ display: "none" }}
               onChange={(e) => { addImages(e.target.files); e.target.value = ""; }}
             />
-            <button
-              className="max-attach-btn"
-              onClick={() => fileInputRef.current?.click()}
-              title="Attach image"
-            >
-              <PaperclipIcon />
-            </button>
             <textarea
               ref={textareaRef}
               className="max-textarea"
@@ -347,8 +330,15 @@ export default function MaxPanel({ context }: Props) {
               onPaste={handlePaste}
               placeholder={key ? "Ask Max… (Enter to send, Shift+Enter for newline)" : "Add API key in Settings to use Max"}
               disabled={!key}
-              rows={1}
+              rows={5}
             />
+            <button
+              className="max-attach-btn"
+              onClick={() => fileInputRef.current?.click()}
+              title="Attach image"
+            >
+              <PaperclipIcon />
+            </button>
             {streaming ? (
               <button className="max-send-btn max-send-btn--stop" onClick={handleStop} title="Stop">
                 <StopIcon />
@@ -370,13 +360,6 @@ export default function MaxPanel({ context }: Props) {
   );
 }
 
-function MaxIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{ opacity: 0.9 }}>
-      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/>
-    </svg>
-  );
-}
 
 function SendIcon() {
   return (
