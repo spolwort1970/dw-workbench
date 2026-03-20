@@ -10,6 +10,7 @@ import ImportExport, { type WorkspaceState } from "./components/ImportExport";
 import FileMenu from "./components/FileMenu";
 import FlowCanvas, { type FlowCanvasHandle } from "./components/flow/FlowCanvas";
 import MaxPanel from "./components/MaxPanel";
+import ErrorHintsModal from "./components/ErrorHintsModal";
 import MimeTypeDropdown, { MIME_TYPES, type MimeTypeOption } from "./components/MimeTypeDropdown";
 import { registerThemes, isLightTheme, getThemeBg } from "./monacoThemes";
 import { DW_LANGUAGE_ID } from "./dwLanguage";
@@ -43,6 +44,7 @@ function AppInner() {
   const { confirm, alert, prompt, setDialogTheme } = useDialog();
   const [activeTab, setActiveTab] = useState<Tab>("script");
   const [notesPreview, setNotesPreview] = useState(false);
+  const [hintsOpen, setHintsOpen] = useState(false);
 
   // ── Project state ──────────────────────────────────────────────
   const [projectName, setProjectName] = useState(DEFAULT_PROJECT_NAME);
@@ -408,7 +410,7 @@ function AppInner() {
             <button className="header-history-btn" title="Redo (Ctrl+Y)" disabled={activeTab !== "flow" || !canRedo} onClick={() => flowCanvasRef.current?.redo()}>↪ Redo</button>
           </div>
           <ImportExport getState={getWorkspaceState} onImport={handleImportWorkspace} />
-          <SettingsDropdown theme={editorTheme} onThemeChange={handleThemeChange} fontSize={editorFontSize} onFontSizeChange={handleFontSizeChange} />
+          <SettingsDropdown theme={editorTheme} onThemeChange={handleThemeChange} fontSize={editorFontSize} onFontSizeChange={handleFontSizeChange} onOpenHints={() => setHintsOpen(true)} />
         </div>
       </header>
 
@@ -640,6 +642,8 @@ function AppInner() {
           )}
         </div>
       )}
+
+      {hintsOpen && <ErrorHintsModal onClose={() => setHintsOpen(false)} />}
     </div>
   );
 }

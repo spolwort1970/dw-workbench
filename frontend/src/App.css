@@ -2935,3 +2935,201 @@
 .ai-key-input:focus {
   border-color: var(--accent);
 }
+
+/* ── Error Hints Modal ────────────────────────────────────────── */
+.hints-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.hints-modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 560px;
+  max-width: 95vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+.hints-modal-header {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.hints-modal-title {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.hints-close-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.hints-close-btn:hover { color: var(--text); background: var(--bg-deep); }
+
+.hints-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  padding: 10px 16px 4px;
+  flex-shrink: 0;
+}
+.hints-section-label--add { padding-top: 6px; }
+.hints-empty-note {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  font-style: italic;
+}
+
+.hints-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 16px 6px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+.hints-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 2fr auto;
+  gap: 8px;
+  align-items: start;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+}
+.hints-row--builtin {
+  grid-template-columns: minmax(120px, 1fr) 2fr;
+  opacity: 0.7;
+}
+.hints-pattern {
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 11px;
+  color: var(--accent);
+  word-break: break-all;
+}
+.hints-tip {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.4;
+}
+.hints-delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  align-self: start;
+}
+.hints-delete-btn:hover { color: var(--error); background: rgba(243,139,168,0.1); }
+
+/* Add form */
+.hints-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 16px 10px;
+  flex-shrink: 0;
+}
+.hints-add-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.hints-field-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.hints-input {
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 5px 8px;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+.hints-input:focus { border-color: var(--accent); }
+.hints-input--error { border-color: var(--error) !important; }
+.hints-error-msg {
+  font-size: 11px;
+  color: var(--error);
+}
+.hints-textarea {
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 5px 8px;
+  outline: none;
+  resize: vertical;
+  font-family: inherit;
+  box-sizing: border-box;
+  width: 100%;
+}
+.hints-textarea:focus { border-color: var(--accent); }
+.hints-add-btn {
+  align-self: flex-start;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 5px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.1s;
+}
+.hints-add-btn:hover:not(:disabled) { opacity: 0.85; }
+.hints-add-btn:disabled { opacity: 0.35; cursor: default; }
+
+/* Test area */
+.hints-test-area {
+  padding: 0 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.hints-test-result {
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  line-height: 1.4;
+}
+.hints-test-result--match {
+  background: rgba(34,197,94,0.12);
+  color: #22c55e;
+  border: 1px solid rgba(34,197,94,0.25);
+}
+.hints-test-result--none {
+  background: var(--bg-deep);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  font-style: italic;
+}

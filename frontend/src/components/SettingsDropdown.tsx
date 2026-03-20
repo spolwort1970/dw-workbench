@@ -12,9 +12,10 @@ interface Props {
   onThemeChange: (id: string) => void;
   fontSize: number;
   onFontSizeChange: (size: number) => void;
+  onOpenHints: () => void;
 }
 
-export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFontSizeChange }: Props) {
+export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFontSizeChange, onOpenHints }: Props) {
   const [open, setOpen] = useState(false);
   const [themeExpanded, setThemeExpanded] = useState(false);
   const [fontExpanded, setFontExpanded] = useState(false);
@@ -96,6 +97,14 @@ export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFon
               ))}
             </div>
           )}
+
+          {/* Error Hints */}
+          <button
+            className="settings-row"
+            onClick={() => { setOpen(false); onOpenHints(); }}
+          >
+            <span className="settings-row-label">Error Hints…</span>
+          </button>
 
           {/* AI (Max) row */}
           <button
