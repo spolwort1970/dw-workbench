@@ -449,6 +449,7 @@ function AppInner() {
       </div>
 
       {activeTab === "script" && (
+        <div className="script-tab-root">
         <div className="app-body">
 
           {/* Payload column */}
@@ -502,23 +503,14 @@ function AppInner() {
                 <CopyButton getText={() => script} />
               </span>
             </div>
-            <div className="script-editor-wrap">
-              <Editor
-                height="100%"
-                defaultLanguage={DW_LANGUAGE_ID}
-                theme={editorTheme}
-                value={script}
-                onChange={(v) => setScript(v ?? "")}
-                options={{ fontSize: editorFontSize, minimap: { enabled: false }, scrollBeyondLastLine: false }}
-              />
-            </div>
-            <MaxPanel context={{
-              script,
-              payload: payloadText,
-              output: result?.success ? String(result.output ?? "") : undefined,
-              error: result?.error || fetchError || undefined,
-              project_name: projectName,
-            }} />
+            <Editor
+              height="100%"
+              defaultLanguage={DW_LANGUAGE_ID}
+              theme={editorTheme}
+              value={script}
+              onChange={(v) => setScript(v ?? "")}
+              options={{ fontSize: editorFontSize, minimap: { enabled: false }, scrollBeyondLastLine: false }}
+            />
           </div>
 
           {/* Script / Output divider */}
@@ -599,6 +591,14 @@ function AppInner() {
             </div>}
           </div>
 
+        </div>
+        <MaxPanel context={{
+          script,
+          payload: payloadText,
+          output: result?.success ? String(result.output ?? "") : undefined,
+          error: result?.error || fetchError || undefined,
+          project_name: projectName,
+        }} />
         </div>
       )}
 

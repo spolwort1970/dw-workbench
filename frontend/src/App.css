@@ -2627,11 +2627,17 @@
   max-width: 120px;
 }
 
-/* ── Script editor wrapper (fills script-col above Max panel) ─── */
-.script-editor-wrap {
+/* ── Script tab root (wraps app-body + Max panel) ─────────────── */
+.script-tab-root {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+.script-tab-root .app-body {
+  flex: 1;
+  min-height: 0;
 }
 
 /* ── Max AI Panel ─────────────────────────────────────────────── */

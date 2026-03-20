@@ -21,7 +21,9 @@ export default function MaxPanel({ context }: Props) {
   const [collapsed, setCollapsed] = useState(false);
   const [panelHeight, setPanelHeight] = useState(DEFAULT_HEIGHT);
   const [messages, setMessages] = useState<MaxMessage[]>([]);
-  const [sessionSummary, setSessionSummary] = useState<string>("");
+  const [sessionSummary, setSessionSummary] = useState<string>(
+    () => localStorage.getItem("dw-max-summary") ?? ""
+  );
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
@@ -40,6 +42,22 @@ export default function MaxPanel({ context }: Props) {
     window.addEventListener("dw-api-key-changed", handler);
     return () => window.removeEventListener("dw-api-key-changed", handler);
   }, []);
+
+  // Persist summary to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem("dw-max-summary", sessionSummary);
+  }, [sessionSummary]);
+
+  // On first load, if there's a saved summary show a recap greeting
+  useEffect(() => {
+    const saved = localStorage.getItem("dw-max-summary");
+    if (saved) {
+      setMessages([{
+        role: "assistant",
+        content: [{ type: "text", text: `Welcome back! Here's what we were working on last time:\n\n${saved}\n\nWhat would you like to pick up on?` }],
+      }]);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
