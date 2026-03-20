@@ -2627,28 +2627,30 @@
   max-width: 120px;
 }
 
-/* ── Script tab root (wraps app-body + Max panel) ─────────────── */
-.script-tab-root {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-.script-tab-root .app-body {
-  flex: 1;
-  min-height: 0;
+/* ── Detached tab indicator ───────────────────────────────────── */
+.tab--detached {
+  opacity: 0.5;
+  font-style: italic;
 }
 
 /* ── Max AI Panel ─────────────────────────────────────────────── */
 .max-panel {
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
   background: var(--bg-surface);
   border-top: 2px solid var(--accent);
   overflow: hidden;
   position: relative;
+}
+/* Docked: fixed height, shrinkable */
+.max-panel--docked {
+  flex-shrink: 0;
+}
+/* Tab / standalone: fill available height */
+.max-panel--tab,
+.max-panel--standalone {
+  flex: 1;
+  min-height: 0;
 }
 .max-panel--collapsed {
   height: auto !important;
@@ -2700,6 +2702,12 @@
   line-height: 1;
   color: var(--accent);
 }
+.max-title-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
 .max-header-actions {
   display: flex;
   align-items: center;
@@ -2712,6 +2720,12 @@
   color: #22c55e;
   opacity: 0.8;
 }
+.max-action-btn--popout {
+  margin-left: 4px;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .max-action-btn {
   font-size: 11px;
   padding: 3px 10px;
@@ -2849,15 +2863,36 @@
   padding: 0;
 }
 
+/* Inner sash (between messages and input) */
+.max-inner-sash {
+  height: 5px;
+  flex-shrink: 0;
+  cursor: ns-resize;
+  background: transparent;
+  border-top: 1px solid var(--border);
+}
+.max-inner-sash:hover {
+  background: var(--accent);
+  opacity: 0.4;
+}
+
 /* Input bar */
 .max-input-bar {
   display: flex;
-  align-items: flex-end;
+  align-items: stretch;
   gap: 6px;
   padding: 8px 10px;
-  border-top: 1px solid var(--border);
   flex-shrink: 0;
   background: var(--bg-surface);
+  box-sizing: border-box;
+  min-height: 60px;
+}
+.max-input-btns {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
 }
 .max-attach-btn {
   background: none;
@@ -2880,12 +2915,12 @@
   font-size: 13px;
   font-family: inherit;
   padding: 6px 8px;
-  resize: vertical;
-  min-height: 88px;
-  max-height: 300px;
+  resize: none;
   overflow-y: auto;
   line-height: 1.4;
   outline: none;
+  height: 100%;
+  box-sizing: border-box;
 }
 .max-textarea:focus {
   border-color: var(--accent);

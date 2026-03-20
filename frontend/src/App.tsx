@@ -29,10 +29,24 @@ import "./App.css";
 const MIN_COL_WIDTH = 150;
 const PAYLOAD_COLLAPSED_WIDTH = 52;
 
-type Tab = "script" | "flow" | "notes";
+type Tab = "script" | "flow" | "max" | "notes";
 
 export default function App() {
   const [theme] = useState(() => localStorage.getItem("dw-theme") ?? "vs-dark");
+
+  // Standalone Max window
+  if (window.location.hash === "#max-window") {
+    return (
+      <div
+        className="app"
+        data-theme={isLightTheme(theme) ? "light" : "dark"}
+        style={{ height: "100vh", overflow: "hidden" }}
+      >
+        <MaxPanel mode="standalone" />
+      </div>
+    );
+  }
+
   return (
     <DialogProvider theme={theme}>
       <AppInner />
@@ -45,6 +59,8 @@ function AppInner() {
   const [activeTab, setActiveTab] = useState<Tab>("script");
   const [notesPreview, setNotesPreview] = useState(false);
   const [hintsOpen, setHintsOpen] = useState(false);
+  const [maxDetached, setMaxDetached] = useState(false);
+  const maxPopupRef = useRef<Window | null>(null);
 
   // ── Project state ──────────────────────────────────────────────
   const [projectName, setProjectName] = useState(DEFAULT_PROJECT_NAME);
@@ -272,6 +288,51 @@ function AppInner() {
     await addRecentProject({ name: loaded.meta.name, modified: loaded.meta.modified, handle });
   }, [isDirty, restoreEditorState]);
 
+  // Broadcast context to Max standalone window
+  useEffect(() => {
+    const ch = new BroadcastChannel("dw-max-context");
+    ch.postMessage({
+      script,
+      payload: payloadText,
+      output: result?.success ? String(result.output ?? "") : undefined,
+      error: result?.error || fetchError || undefined,
+      project_name: projectName,
+    });
+    localStorage.setItem("dw-max-context", JSON.stringify({
+      script, payload: payloadText,
+      output: result?.success ? String(result.output ?? "") : undefined,
+      error: result?.error || fetchError || undefined,
+      project_name: projectName,
+    }));
+    ch.close();
+  }, [script, payloadText, result, fetchError, projectName]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pop-out Max window
+  const handleMaxPopOut = useCallback(() => {
+    const popup = window.open(
+      `${window.location.origin}/#max-window`,
+      "dw-max-window",
+      "width=640,height=820,menubar=no,toolbar=no"
+    );
+    if (popup) {
+      maxPopupRef.current = popup;
+      setMaxDetached(true);
+      setActiveTab("script");
+    }
+  }, []);
+
+  // Poll for popup close
+  useEffect(() => {
+    if (!maxDetached) return;
+    const interval = setInterval(() => {
+      if (maxPopupRef.current?.closed) {
+        setMaxDetached(false);
+        maxPopupRef.current = null;
+      }
+    }, 500);
+    return () => clearInterval(interval);
+  }, [maxDetached]);
+
   // Ctrl+S shortcut
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -430,6 +491,13 @@ function AppInner() {
           Flow Analyzer
         </button>
         <button
+          className={`tab ${activeTab === "max" ? "tab--active" : ""} ${maxDetached ? "tab--detached" : ""}`}
+          onClick={() => maxDetached ? maxPopupRef.current?.focus() : setActiveTab("max")}
+          title={maxDetached ? "Max is open in its own window — click to focus it" : "AI assistant for DataWeave and MuleSoft"}
+        >
+          Max{maxDetached ? " ↗" : ""}
+        </button>
+        <button
           className={`tab ${activeTab === "notes" ? "tab--active" : ""}`}
           onClick={() => setActiveTab("notes")}
           title="Supports Markdown preview. Great for documenting transformation intent and providing context to AI assistants."
@@ -449,7 +517,6 @@ function AppInner() {
       </div>
 
       {activeTab === "script" && (
-        <div className="script-tab-root">
         <div className="app-body">
 
           {/* Payload column */}
@@ -592,14 +659,6 @@ function AppInner() {
           </div>
 
         </div>
-        <MaxPanel context={{
-          script,
-          payload: payloadText,
-          output: result?.success ? String(result.output ?? "") : undefined,
-          error: result?.error || fetchError || undefined,
-          project_name: projectName,
-        }} />
-        </div>
       )}
 
       {activeTab === "flow" && (
@@ -610,6 +669,20 @@ function AppInner() {
           theme={editorTheme}
           onChange={handleFlowChange}
           onHistoryChange={handleHistoryChange}
+        />
+      )}
+
+      {activeTab === "max" && !maxDetached && (
+        <MaxPanel
+          mode="tab"
+          context={{
+            script,
+            payload: payloadText,
+            output: result?.success ? String(result.output ?? "") : undefined,
+            error: result?.error || fetchError || undefined,
+            project_name: projectName,
+          }}
+          onPopOut={handleMaxPopOut}
         />
       )}
 

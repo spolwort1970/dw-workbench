@@ -294,6 +294,26 @@ function createMainWindow() {
 
   win.loadURL(`http://localhost:${PORT}`);
   win.once("ready-to-show", () => win.show());
+
+  // Allow Max pop-out window
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.includes("#max-window")) {
+      return {
+        action: "allow",
+        overrideBrowserWindowOptions: {
+          width: 640,
+          height: 820,
+          minWidth: 400,
+          minHeight: 400,
+          title: "Max — DW Workbench",
+          autoHideMenuBar: true,
+          webPreferences: { contextIsolation: true },
+        },
+      };
+    }
+    return { action: "deny" };
+  });
+
   return win;
 }
 
