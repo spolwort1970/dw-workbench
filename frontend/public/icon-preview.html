@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Icon Preview</title>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<style>
+  body { font-family: sans-serif; background: #1e1e1e; color: #ccc; padding: 20px; }
+  h2 { color: #fff; margin-top: 30px; border-bottom: 1px solid #444; padding-bottom: 6px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; }
+  .item { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 90px; }
+  .circle { width: 42px; height: 42px; border-radius: 50%; background: #c0392b; display: flex; align-items: center; justify-content: center; }
+  .label { font-size: 11px; text-align: center; color: #aaa; }
+</style>
+</head>
+<body>
+<h2>Raise Error candidates</h2>
+<div class="grid">
+  <div class="item"><div class="circle"><i data-lucide="triangle-alert" color="white" width="20" height="20"></i></div><div class="label">TriangleAlert</div></div>
+  <div class="item"><div class="circle"><i data-lucide="octagon-alert" color="white" width="20" height="20"></i></div><div class="label">OctagonAlert (current)</div></div>
+  <div class="item"><div class="circle"><i data-lucide="siren" color="white" width="20" height="20"></i></div><div class="label">Siren</div></div>
+  <div class="item"><div class="circle"><i data-lucide="zap" color="white" width="20" height="20"></i></div><div class="label">Zap</div></div>
+  <div class="item"><div class="circle"><i data-lucide="bell-ring" color="white" width="20" height="20"></i></div><div class="label">BellRing</div></div>
+</div>
+
+<h2>On Error Continue candidates</h2>
+<div class="grid">
+  <div class="item"><div class="circle"><i data-lucide="circle-alert" color="white" width="20" height="20"></i></div><div class="label">CircleAlert (current)</div></div>
+  <div class="item"><div class="circle"><i data-lucide="corner-down-right" color="white" width="20" height="20"></i></div><div class="label">CornerDownRight</div></div>
+  <div class="item"><div class="circle"><i data-lucide="forward" color="white" width="20" height="20"></i></div><div class="label">Forward</div></div>
+  <div class="item"><div class="circle"><i data-lucide="arrow-right-from-line" color="white" width="20" height="20"></i></div><div class="label">ArrowRightFromLine</div></div>
+  <div class="item"><div class="circle"><i data-lucide="share-2" color="white" width="20" height="20"></i></div><div class="label">Share2</div></div>
+</div>
+
+<h2>On Error Propagate candidates</h2>
+<div class="grid">
+  <div class="item"><div class="circle"><i data-lucide="circle-x" color="white" width="20" height="20"></i></div><div class="label">CircleX (current)</div></div>
+  <div class="item"><div class="circle"><i data-lucide="corner-up-right" color="white" width="20" height="20"></i></div><div class="label">CornerUpRight</div></div>
+  <div class="item"><div class="circle"><i data-lucide="arrow-up-right" color="white" width="20" height="20"></i></div><div class="label">ArrowUpRight</div></div>
+  <div class="item"><div class="circle"><i data-lucide="external-link" color="white" width="20" height="20"></i></div><div class="label">ExternalLink</div></div>
+  <div class="item"><div class="circle"><i data-lucide="log-out" color="white" width="20" height="20"></i></div><div class="label">LogOut</div></div>
+  <div class="item"><div class="circle"><i data-lucide="shield-x" color="white" width="20" height="20"></i></div><div class="label">ShieldX</div></div>
+</div>
+
+<script>lucide.createIcons();</script>
+</body>
+</html>

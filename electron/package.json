@@ -1,0 +1,15 @@
+{
+  "name": "dw-workbench",
+  "version": "0.1.0",
+  "description": "DataWeave Workbench — visual DW script and flow designer",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-packager . \"DW Workbench\" --platform win32 --arch x64 --out dist --overwrite --extra-resource ../backend/dist/server",
+    "zip":  "powershell -Command \"Compress-Archive -Path 'dist/DW Workbench-win32-x64' -DestinationPath 'dist/DW-Workbench-win32-x64.zip' -Force\""
+  },
+  "devDependencies": {
+    "@electron/packager": "^19.1.0",
+    "electron": "^31.0.0"
+  }
+}

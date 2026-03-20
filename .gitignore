@@ -1,0 +1,27 @@
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Electron
+electron/node_modules/
+electron/dist/
+electron/dist-packager/
+
+# Python
+backend/__pycache__/
+backend/**/__pycache__/
+backend/.venv/
+backend/*.egg-info/
+backend/dist/
+backend/build/
+**/*.pyc
+**/*.pyo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+*.swp
