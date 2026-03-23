@@ -33,13 +33,36 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
   const [inputHeight, setInputHeight] = useState(DEFAULT_INPUT_HEIGHT);
 
   // ── Chat state ─────────────────────────────────────────────────
-  const [messages,       setMessages]       = useState<MaxMessage[]>([]);
+  const [messages, setMessages] = useState<MaxMessage[]>(() => {
+    try {
+      const saved = localStorage.getItem("dw-max-messages");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  });
   const [sessionSummary, setSessionSummary] = useState<string>(
     () => localStorage.getItem("dw-max-summary") ?? ""
   );
+  // Recap is shown as a separate banner (not in messages) so Archive doesn't treat it as conversation.
+  // sessionStorage tracks dismissal so it doesn't re-appear on tab switch within the same session.
+  const [recap, setRecap] = useState<string | null>(() => {
+    if (sessionStorage.getItem("dw-max-recap-dismissed") === "true") return null;
+    try {
+      const saved = localStorage.getItem("dw-max-messages");
+      const parsed = saved ? JSON.parse(saved) : [];
+      if (parsed.length === 0) return localStorage.getItem("dw-max-summary");
+    } catch { /* ignore */ }
+    return null;
+  });
   const [input,          setInput]          = useState("");
   const [streaming,      setStreaming]      = useState(false);
   const [pendingImages,  setPendingImages]  = useState<PendingImage[]>([]);
+
+  // ── Ghost overlay state (standalone only) ─────────────────────
+  const [isGhosted, setIsGhosted] = useState(false);
+
+  // ── Snap state (standalone only) ──────────────────────────────
+  const [snapEdge,     setSnapEdge]     = useState<string | null>(null);
+  const [snapMenuOpen, setSnapMenuOpen] = useState(false);
 
   // ── Context (standalone reads from broadcast) ──────────────────
   const [liveContext, setLiveContext] = useState<MaxContext>(() => {
@@ -51,8 +74,10 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
   });
   const activeContext = mode === "standalone" ? liveContext : (context ?? {});
 
-  // ── API key ────────────────────────────────────────────────────
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem("dw-max-api-key") ?? "");
+  // ── API key / provider ─────────────────────────────────────────
+  const [apiKey,       setApiKey]       = useState(() => localStorage.getItem("dw-max-api-key") ?? "");
+  const [provider,     setProvider]     = useState(() => localStorage.getItem("dw-max-provider") ?? "anthropic");
+  const [vertexRegion, setVertexRegion] = useState(() => localStorage.getItem("dw-max-vertex-region") ?? "us-east5");
 
   // ── Refs ────────────────────────────────────────────────────────
   const abortRef           = useRef<AbortController | null>(null);
@@ -63,9 +88,13 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
 
   // ── Effects ────────────────────────────────────────────────────
 
-  // API key sync across settings
+  // API key / provider sync across settings
   useEffect(() => {
-    const handler = () => setApiKey(localStorage.getItem("dw-max-api-key") ?? "");
+    const handler = () => {
+      setApiKey(localStorage.getItem("dw-max-api-key") ?? "");
+      setProvider(localStorage.getItem("dw-max-provider") ?? "anthropic");
+      setVertexRegion(localStorage.getItem("dw-max-vertex-region") ?? "us-east5");
+    };
     window.addEventListener("dw-api-key-changed", handler);
     return () => window.removeEventListener("dw-api-key-changed", handler);
   }, []);
@@ -83,21 +112,78 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
     if (mode === "standalone") document.title = "Max — DW Workbench";
   }, [mode]);
 
+  // Standalone: listen for ghost + snap state from main process
+  useEffect(() => {
+    if (mode !== "standalone") return;
+    const api = (window as any).electronAPI;
+    if (!api) return;
+    api.on("max-ghost-state", (val: boolean) => setIsGhosted(val));
+    api.on("max-snap-state",  (val: { snapped: boolean; edge: string | null }) =>
+      setSnapEdge(val.snapped ? val.edge : null)
+    );
+    return () => {
+      api.removeAllListeners("max-ghost-state");
+      api.removeAllListeners("max-snap-state");
+    };
+  }, [mode]);
+
+  // Standalone: hover for 2 seconds while ghosted → restore opacity
+  //             mouse leaves without clicking → re-ghost
+  useEffect(() => {
+    if (mode !== "standalone") return;
+
+    type GhostState = "focused" | "ghosted" | "hover-restored";
+    let state: GhostState = "focused";
+    let hoverTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const onBlur  = () => {
+      state = "ghosted";
+      if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
+    };
+    const onFocus = () => {
+      state = "focused";
+      if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
+    };
+    const onMouseMove = () => {
+      if (state !== "ghosted" || hoverTimer) return;
+      hoverTimer = setTimeout(() => {
+        hoverTimer = null;
+        if (state === "ghosted") {
+          state = "hover-restored";
+          (window as any).electronAPI?.send("max-hover-restore");
+        }
+      }, 500);
+    };
+    const onMouseLeave = () => {
+      if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
+      if (state === "hover-restored") {
+        state = "ghosted";
+        (window as any).electronAPI?.send("max-hover-ghost");
+      }
+    };
+
+    window.addEventListener("blur",         onBlur);
+    window.addEventListener("focus",        onFocus);
+    document.addEventListener("mousemove",  onMouseMove);
+    document.addEventListener("mouseleave", onMouseLeave);
+    return () => {
+      window.removeEventListener("blur",         onBlur);
+      window.removeEventListener("focus",        onFocus);
+      document.removeEventListener("mousemove",  onMouseMove);
+      document.removeEventListener("mouseleave", onMouseLeave);
+      if (hoverTimer) clearTimeout(hoverTimer);
+    };
+  }, [mode]);
+
+  // Persist messages
+  useEffect(() => {
+    localStorage.setItem("dw-max-messages", JSON.stringify(messages));
+  }, [messages]);
+
   // Persist summary
   useEffect(() => {
     localStorage.setItem("dw-max-summary", sessionSummary);
   }, [sessionSummary]);
-
-  // Startup recap from saved summary
-  useEffect(() => {
-    const saved = localStorage.getItem("dw-max-summary");
-    if (saved) {
-      setMessages([{
-        role: "assistant",
-        content: [{ type: "text", text: `Welcome back! Here's what we were working on last time:\n\n${saved}\n\nWhat would you like to pick up on?` }],
-      }]);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-scroll
   useEffect(() => {
@@ -107,22 +193,26 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
   // Auto-summary timer
   useEffect(() => {
     autoSummaryTimerRef.current = setInterval(() => {
-      if (messages.length > 0 && apiKey) doSummarize(false);
+      if (messages.length > 0 && isReady) doSummarize(false);
     }, AUTO_SUMMARY_INTERVAL_MS);
     return () => { if (autoSummaryTimerRef.current) clearInterval(autoSummaryTimerRef.current); };
   }, [messages]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Summarize ──────────────────────────────────────────────────
+  const isReady = provider === "vertex" || !!apiKey;
+
   const doSummarize = useCallback(async (clearAfter: boolean) => {
-    if (!apiKey || messages.length === 0) return;
+    if (!isReady || messages.length === 0) return;
     try {
       const res = await maxSummarize({
         api_key: apiKey,
+        provider: provider as any,
+        vertex_region: vertexRegion,
         messages,
         existing_summary: sessionSummary || undefined,
       });
       setSessionSummary(res.summary);
-      if (clearAfter) setMessages([]);
+      if (clearAfter) { setMessages([]); setRecap(null); sessionStorage.removeItem("dw-max-recap-dismissed"); }
     } catch { /* ignore */ }
   }, [messages, sessionSummary, apiKey]);
 
@@ -177,7 +267,7 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text && pendingImages.length === 0) return;
-    if (!apiKey) return;
+    if (!isReady) return;
 
     const userContent: MaxContentPart[] = [
       ...pendingImages.map((img): MaxContentPart => ({ type: "image", data: img.data, media_type: img.mimeType })),
@@ -187,6 +277,8 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
     const userMsg: MaxMessage = { role: "user", content: userContent };
     const newMessages = [...messages, userMsg];
     setMessages([...newMessages, { role: "assistant", content: [{ type: "text", text: "" }] }]);
+    sessionStorage.setItem("dw-max-recap-dismissed", "true");
+    setRecap(null);
     setInput("");
     setPendingImages([]);
     setStreaming(true);
@@ -196,7 +288,7 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
 
     try {
       await streamMaxChat(
-        { api_key: apiKey, messages: newMessages, context: { ...activeContext, session_summary: sessionSummary || undefined }, model: "claude-sonnet-4-6" },
+        { api_key: apiKey, provider: provider as any, vertex_region: vertexRegion, messages: newMessages, context: { ...activeContext, session_summary: sessionSummary || undefined }, model: "claude-sonnet-4-6" },
         (chunk) => {
           setMessages((prev) => {
             const last = prev[prev.length - 1];
@@ -284,6 +376,44 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
               ↗ Pop out
             </button>
           )}
+          {isStandalone && (
+            <div className="max-snap-wrapper">
+              <button
+                className={`max-action-btn max-action-btn--snap ${snapEdge ? "max-action-btn--snap-active" : ""}`}
+                onClick={() => setSnapMenuOpen(v => !v)}
+                title="Snap window to edge"
+              >
+                Snap {snapEdge ? `· ${snapEdge}` : "▾"}
+              </button>
+              {snapMenuOpen && (
+                <div className="max-snap-menu">
+                  {(["left", "right", "bottom"] as const).map(edge => (
+                    <button
+                      key={edge}
+                      className={`max-snap-option ${snapEdge === edge ? "max-snap-option--active" : ""}`}
+                      onClick={() => {
+                        (window as any).electronAPI?.send("max-snap-to", edge);
+                        setSnapMenuOpen(false);
+                      }}
+                    >
+                      {edge.charAt(0).toUpperCase() + edge.slice(1)} edge
+                    </button>
+                  ))}
+                  {snapEdge && (
+                    <button
+                      className="max-snap-option max-snap-option--float"
+                      onClick={() => {
+                        (window as any).electronAPI?.send("max-unsnap");
+                        setSnapMenuOpen(false);
+                      }}
+                    >
+                      Float (unsnap)
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -292,8 +422,17 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
         <>
           {/* Messages */}
           <div className="max-messages">
-            {!apiKey && <div className="max-no-key">Enter your Anthropic API key in Settings (gear icon) to use Max.</div>}
-            {apiKey && messages.length === 0 && <div className="max-empty">Ask Max anything about your DataWeave script or MuleSoft flow.</div>}
+            {!isReady && <div className="max-no-key">{provider === "vertex" ? "Configure Google Vertex AI in Settings (gear icon) to use Max." : "Enter your Anthropic API key in Settings (gear icon) to use Max."}</div>}
+            {recap && (
+              <div className="max-recap">
+                <div className="max-recap-header">
+                  <span>Last session recap</span>
+                  <button className="max-recap-dismiss" onClick={() => { sessionStorage.setItem("dw-max-recap-dismissed", "true"); setRecap(null); }} title="Dismiss">✕</button>
+                </div>
+                <div className="max-recap-body"><ReactMarkdown>{recap}</ReactMarkdown></div>
+              </div>
+            )}
+            {isReady && messages.length === 0 && !recap && <div className="max-empty">Ask Max anything about your DataWeave script or MuleSoft flow.</div>}
             {messages.map((msg, i) => (
               <div key={i} className={`max-message max-message--${msg.role}`}>
                 <span className="max-message-role">{msg.role === "user" ? "You" : "Max"}</span>
@@ -337,18 +476,22 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               onPaste={handlePaste}
-              placeholder={apiKey ? "Ask Max… (Enter to send, Shift+Enter for newline)" : "Add API key in Settings to use Max"}
-              disabled={!apiKey}
+              placeholder={isReady ? "Ask Max… (Enter to send, Shift+Enter for newline)" : "Configure AI provider in Settings to use Max"}
+              disabled={!isReady}
             />
             <div className="max-input-btns">
               <button className="max-attach-btn" onClick={() => fileInputRef.current?.click()} title="Attach file"><PaperclipIcon /></button>
               {streaming
                 ? <button className="max-send-btn max-send-btn--stop" onClick={handleStop} title="Stop"><StopIcon /></button>
-                : <button className="max-send-btn" onClick={handleSend} disabled={!apiKey || (!input.trim() && pendingImages.length === 0)} title="Send (Enter)"><SendIcon /></button>
+                : <button className="max-send-btn" onClick={handleSend} disabled={!isReady || (!input.trim() && pendingImages.length === 0)} title="Send (Enter)"><SendIcon /></button>
               }
             </div>
           </div>
         </>
+      )}
+      {/* Ghost overlay — standalone mode only */}
+      {mode === "standalone" && (
+        <div className={`max-ghost-overlay${isGhosted ? " max-ghost-overlay--active" : ""}`} />
       )}
     </div>
   );

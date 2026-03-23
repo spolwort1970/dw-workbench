@@ -1,6 +1,6 @@
 "use strict";
 
-const { app, BrowserWindow, dialog, Menu } = require("electron");
+const { app, BrowserWindow, dialog, Menu, ipcMain, screen } = require("electron");
 const { spawn, execSync }             = require("child_process");
 const path   = require("path");
 const fs     = require("fs");
@@ -278,6 +278,113 @@ function waitForBackend(retries = 40) {
   });
 }
 
+// ── Popup opacity helpers ─────────────────────────────────────────────────────
+
+let mainWinRef    = null;   // reference to the main BrowserWindow
+let popupWin      = null;
+let fadeTimer     = null;
+let currentOpacity = 1.0;
+
+function fadeOpacity(win, to, durationMs) {
+  if (fadeTimer) { clearInterval(fadeTimer); fadeTimer = null; }
+  const steps    = 20;
+  const interval = durationMs / steps;
+  const from     = currentOpacity;
+  const delta    = (to - from) / steps;
+  let   count    = 0;
+  fadeTimer = setInterval(() => {
+    count++;
+    currentOpacity = from + delta * count;
+    if (!win.isDestroyed()) win.setOpacity(currentOpacity);
+    if (count >= steps) {
+      clearInterval(fadeTimer);
+      fadeTimer = null;
+      currentOpacity = to;
+    }
+  }, interval);
+}
+
+// ── Snap-to-edge docking ──────────────────────────────────────────────────────
+
+let isSnapped     = false;
+let snapEdge      = null;    // 'left' | 'right' | 'bottom'
+let preSnapBounds = null;
+let snapLockUntil = 0;       // ignore resize events briefly after programmatic setBounds
+
+/** Work area of the display where the MAIN window currently lives. */
+function getMainWorkArea() {
+  const ref = mainWinRef || popupWin;
+  if (!ref || ref.isDestroyed()) return screen.getPrimaryDisplay().workArea;
+  const b = (mainWinRef && !mainWinRef.isDestroyed())
+    ? mainWinRef.getBounds()
+    : ref.getBounds();
+  return screen.getDisplayNearestPoint({
+    x: b.x + Math.floor(b.width  / 2),
+    y: b.y + Math.floor(b.height / 2),
+  }).workArea;
+}
+
+function doSnap(childWin, edge, preBounds) {
+  const wa = getMainWorkArea();
+  const mb = (mainWinRef && !mainWinRef.isDestroyed())
+    ? mainWinRef.getBounds()
+    : { x: wa.x, y: wa.y, width: wa.width, height: wa.height };
+
+  // Fixed panel dimensions — always fit inside mb
+  // TOP_FRAC: don't start the popup in the top 35% of the DW window (avoid covering chrome + context)
+  const TOP_FRAC = 0.35;
+  const SIDE_W  = Math.min(400, Math.round(mb.width  * 0.33));
+  const SIDE_Y  = mb.y + Math.round(mb.height * TOP_FRAC);
+  const SIDE_H  = mb.height - Math.round(mb.height * TOP_FRAC) - 10;
+  const BOT_W   = Math.min(620, Math.round(mb.width  * 0.55));
+  const BOT_H   = Math.min(360, Math.round(mb.height * 0.38));
+
+  let newBounds;
+  if (edge === "left") {
+    newBounds = {
+      x:      mb.x,
+      y:      SIDE_Y,
+      width:  SIDE_W,
+      height: SIDE_H,
+    };
+  } else if (edge === "right") {
+    newBounds = {
+      x:      mb.x + mb.width - SIDE_W,
+      y:      SIDE_Y,
+      width:  SIDE_W,
+      height: SIDE_H,
+    };
+  } else { // bottom
+    newBounds = {
+      x:      mb.x + Math.round((mb.width - BOT_W) / 2),
+      y:      mb.y + mb.height - BOT_H,
+      width:  BOT_W,
+      height: BOT_H,
+    };
+  }
+
+  preSnapBounds = { ...preBounds };
+  snapEdge      = edge;
+  isSnapped     = true;
+  snapLockUntil = Date.now() + 500;  // long enough to absorb post-setBounds move events
+
+  childWin.setBounds(newBounds);
+  childWin.webContents.send("max-snap-state", { snapped: true, edge });
+}
+
+function doUnsnap(childWin) {
+  isSnapped     = false;
+  snapEdge      = null;
+  snapLockUntil = Date.now() + 500;
+
+  if (preSnapBounds) {
+    childWin.setBounds(preSnapBounds);
+    preSnapBounds = null;
+  }
+
+  childWin.webContents.send("max-snap-state", { snapped: false, edge: null });
+}
+
 // ── Main window ───────────────────────────────────────────────────────────────
 
 function createMainWindow() {
@@ -292,6 +399,7 @@ function createMainWindow() {
     webPreferences: { contextIsolation: true },
   });
 
+  mainWinRef = win;
   win.loadURL(`http://localhost:${PORT}`);
   win.once("ready-to-show", () => win.show());
 
@@ -302,20 +410,109 @@ function createMainWindow() {
         action: "allow",
         overrideBrowserWindowOptions: {
           width: 640,
-          height: 820,
+          height: 640,
           minWidth: 400,
           minHeight: 400,
           title: "Max — DW Workbench",
           autoHideMenuBar: true,
-          webPreferences: { contextIsolation: true },
+          webPreferences: {
+            contextIsolation: true,
+            preload: path.join(__dirname, "preload.js"),
+          },
         },
       };
     }
     return { action: "deny" };
   });
 
+  // Wire up ghost/overlay + snap behaviour when Max popup is created
+  win.webContents.on("did-create-window", (childWin) => {
+    popupWin       = childWin;
+    currentOpacity = 1.0;
+    isSnapped      = false;
+    snapEdge       = null;
+    preSnapBounds  = null;
+
+    childWin.setAlwaysOnTop(true, "floating");
+
+    // ── Position popup on same display as main window ────────────
+    const wa = getMainWorkArea();
+    const cb = childWin.getBounds();
+    childWin.setPosition(
+      wa.x + wa.width  - cb.width  - 20,
+      wa.y + 20
+    );
+
+    // ── Ghost / restore ──────────────────────────────────────────
+    const ghost = () => {
+      if (childWin.isDestroyed()) return;
+      fadeOpacity(childWin, 0.5, 150);
+      childWin.webContents.send("max-ghost-state", true);
+    };
+    const restore = () => {
+      if (childWin.isDestroyed()) return;
+      fadeOpacity(childWin, 1.0, 200);
+      childWin.webContents.send("max-ghost-state", false);
+    };
+
+    win.on("focus", ghost);
+    childWin.on("focus", restore);
+
+    // ── Lock docked edge during resize ───────────────────────────
+    childWin.on("resize", () => {
+      if (!isSnapped || Date.now() < snapLockUntil) return;
+      const b  = childWin.getBounds();
+      const wa = getMainWorkArea();
+      const mb = (mainWinRef && !mainWinRef.isDestroyed()) ? mainWinRef.getBounds() : wa;
+      let x = b.x, y = b.y;
+      if (snapEdge === "left")   { x = mb.x; }
+      if (snapEdge === "right")  { x = mb.x + mb.width  - b.width; }
+      if (snapEdge === "bottom") { y = mb.y + mb.height - b.height; }
+      if (x !== b.x || y !== b.y) {
+        snapLockUntil = Date.now() + 100;
+        childWin.setPosition(x, y);
+      }
+    });
+
+    childWin.once("closed", () => {
+      popupWin  = null;
+      isSnapped = false;
+      snapEdge  = null;
+      win.off("focus", ghost);
+    });
+  });
+
   return win;
 }
+
+// IPC: renderer signals hover-idle → restore opacity + un-ghost overlay
+ipcMain.on("max-hover-restore", () => {
+  if (popupWin && !popupWin.isDestroyed()) {
+    fadeOpacity(popupWin, 1.0, 200);
+    popupWin.webContents.send("max-ghost-state", false);
+  }
+});
+
+// IPC: snap dropdown — snap to a specific edge
+ipcMain.on("max-snap-to", (_event, edge) => {
+  if (!popupWin || popupWin.isDestroyed()) return;
+  if (isSnapped) doUnsnap(popupWin);            // restore original bounds first
+  const bounds = popupWin.getBounds();
+  doSnap(popupWin, edge, bounds);
+});
+
+// IPC: unsnap button clicked in renderer
+ipcMain.on("max-unsnap", () => {
+  if (popupWin && !popupWin.isDestroyed()) doUnsnap(popupWin);
+});
+
+// IPC: renderer signals mouse left without clicking → re-ghost
+ipcMain.on("max-hover-ghost", () => {
+  if (popupWin && !popupWin.isDestroyed()) {
+    fadeOpacity(popupWin, 0.5, 150);
+    popupWin.webContents.send("max-ghost-state", true);
+  }
+});
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 

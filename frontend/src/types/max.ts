@@ -22,19 +22,37 @@ export interface MaxContext {
   project_prefs?: string;
 }
 
+export type MaxProvider = "anthropic" | "vertex";
+
 export interface MaxChatRequest {
-  api_key: string;
+  api_key?: string;
+  provider?: MaxProvider;
+  vertex_region?: string;
   messages: MaxMessage[];
   context?: MaxContext;
   model?: string;
 }
 
 export interface MaxSummarizeRequest {
-  api_key: string;
+  api_key?: string;
+  provider?: MaxProvider;
+  vertex_region?: string;
   messages: MaxMessage[];
   existing_summary?: string;
 }
 
 export interface MaxSummarizeResponse {
   summary: string;
+}
+
+export interface MaxTestRequest {
+  provider: MaxProvider;
+  api_key?: string;
+  vertex_region?: string;
+}
+
+export interface MaxTestResponse {
+  success: boolean;
+  error?: string;
+  project_id?: string;
 }

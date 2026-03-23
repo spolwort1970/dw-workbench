@@ -2,7 +2,7 @@ import type {
   SimEvent, ExecuteFlowResponse,
   StartDebugResponse, StepDebugResponse, EvaluateDebugResponse,
 } from "../types/execution";
-import type { MaxChatRequest, MaxSummarizeRequest, MaxSummarizeResponse } from "../types/max";
+import type { MaxChatRequest, MaxSummarizeRequest, MaxSummarizeResponse, MaxTestRequest, MaxTestResponse } from "../types/max";
 
 const BASE_URL = "http://localhost:8000";
 
@@ -138,6 +138,16 @@ export async function streamMaxChat(
 
 export async function maxSummarize(req: MaxSummarizeRequest): Promise<MaxSummarizeResponse> {
   const res = await fetch(`${BASE_URL}/max/summarize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+export async function maxTestConnection(req: MaxTestRequest): Promise<MaxTestResponse> {
+  const res = await fetch(`${BASE_URL}/max/test-connection`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),

@@ -139,17 +139,33 @@ class MaxContext(BaseModel):
 
 
 class MaxChatRequest(BaseModel):
-    api_key: str
+    api_key: str = ""
+    provider: str = "anthropic"       # "anthropic" | "vertex"
+    vertex_region: str = "us-east5"   # only used when provider="vertex"
     messages: list[MaxMessage]
     context: MaxContext = MaxContext()
     model: str = "claude-sonnet-4-6"
 
 
 class MaxSummarizeRequest(BaseModel):
-    api_key: str
+    api_key: str = ""
+    provider: str = "anthropic"
+    vertex_region: str = "us-east5"
     messages: list[MaxMessage]
     existing_summary: str | None = None
 
 
 class MaxSummarizeResponse(BaseModel):
     summary: str
+
+
+class MaxTestRequest(BaseModel):
+    provider: str = "anthropic"
+    api_key: str = ""
+    vertex_region: str = "us-east5"
+
+
+class MaxTestResponse(BaseModel):
+    success: bool
+    error: str = ""
+    project_id: str = ""   # echoed back so user can see what was detected

@@ -26,25 +26,41 @@ import { DEFAULT_PROJECT_NAME, defaultScriptEditor, defaultFlowState, type Scrip
 import type { FlowCanvasState } from "./types/flow";
 import "./App.css";
 
-const MIN_COL_WIDTH = 150;
+const MIN_COL_WIDTH = 300;
 const PAYLOAD_COLLAPSED_WIDTH = 52;
 
 type Tab = "script" | "flow" | "max" | "notes";
+
+function StandaloneMax() {
+  const [theme, setTheme] = useState(() => localStorage.getItem("dw-theme") ?? "vs-dark");
+
+  // Sync theme when user changes it in the main window (StorageEvent fires cross-window)
+  useEffect(() => {
+    const handler = (e: StorageEvent) => {
+      if (e.key === "dw-theme" && e.newValue) setTheme(e.newValue);
+    };
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
+  }, []);
+
+  return (
+    <div
+      className="app"
+      data-theme={isLightTheme(theme) ? "light" : "dark"}
+      data-editor-theme={theme}
+      style={{ height: "100vh", overflow: "hidden" }}
+    >
+      <MaxPanel mode="standalone" />
+    </div>
+  );
+}
 
 export default function App() {
   const [theme] = useState(() => localStorage.getItem("dw-theme") ?? "vs-dark");
 
   // Standalone Max window
   if (window.location.hash === "#max-window") {
-    return (
-      <div
-        className="app"
-        data-theme={isLightTheme(theme) ? "light" : "dark"}
-        style={{ height: "100vh", overflow: "hidden" }}
-      >
-        <MaxPanel mode="standalone" />
-      </div>
-    );
+    return <StandaloneMax />;
   }
 
   return (
@@ -507,7 +523,7 @@ function AppInner() {
         <button
           className="tab tab--about"
           onClick={() => alert(
-            "Version 0.1.0\n\nA visual DataWeave script builder and flow analyzer with debugging for MuleSoft developers. No IDE required. An Anthropic API key is needed for AI assistant features.\n\nDesigned by Shane Polwort\nBuilt by Claude (Anthropic)\n\nDataWeave CLI provided by MuleSoft, a Salesforce company.\n\n© 2026 Shane Polwort. All rights reserved.",
+            "Version 0.1.0\n\nA visual DataWeave script builder and flow analyzer with debugging for MuleSoft developers. No IDE required. An Anthropic API key is needed to use Max, the built-in AI assistant.\n\nDesigned by Shane Polwort\nBuilt by Claude (Anthropic)\n\nDataWeave CLI provided by MuleSoft, a Salesforce company.\n\n© 2026 Shane Polwort. All rights reserved.",
             "About DW Workbench"
           )}
           title="About DW Workbench"

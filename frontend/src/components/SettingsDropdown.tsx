@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { THEMES, type ThemeOption } from "../monacoThemes";
+import { maxTestConnection } from "../services/api";
+import type { MaxProvider } from "../types/max";
 
 export const FONT_SIZES = [
   { label: "Small",  value: 13 },
@@ -20,7 +22,11 @@ export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFon
   const [themeExpanded, setThemeExpanded] = useState(false);
   const [fontExpanded, setFontExpanded] = useState(false);
   const [aiExpanded, setAiExpanded] = useState(false);
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem("dw-max-api-key") ?? "");
+  const [apiKey, setApiKey]           = useState(() => localStorage.getItem("dw-max-api-key") ?? "");
+  const [provider, setProvider]       = useState<MaxProvider>(() => (localStorage.getItem("dw-max-provider") as MaxProvider) ?? "anthropic");
+  const [vertexRegion, setVertexRegion] = useState(() => localStorage.getItem("dw-max-vertex-region") ?? "us-east5");
+  const [testStatus, setTestStatus]   = useState<"idle" | "testing" | "ok" | "err">("idle");
+  const [testMsg, setTestMsg]         = useState("");
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -112,26 +118,106 @@ export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFon
             onClick={() => setAiExpanded((v) => !v)}
           >
             <span className="settings-row-label">AI (Max)</span>
-            <span className="settings-row-value">{apiKey ? "Key set ✓" : "No key"}</span>
+            <span className="settings-row-value">
+              {provider === "vertex" ? "Vertex AI" : apiKey ? "Key set ✓" : "No key"}
+            </span>
             <span className="settings-row-chevron">{aiExpanded ? "▾" : "▸"}</span>
           </button>
 
           {aiExpanded && (
             <div className="ai-key-section">
-              <label className="ai-key-label">Anthropic API Key</label>
-              <input
-                type="password"
-                className="ai-key-input"
-                value={apiKey}
-                onChange={(e) => {
-                  setApiKey(e.target.value);
-                  localStorage.setItem("dw-max-api-key", e.target.value);
-                  window.dispatchEvent(new CustomEvent("dw-api-key-changed"));
+              {/* Provider toggle */}
+              <div className="ai-provider-toggle">
+                <button
+                  className={`ai-provider-btn ${provider === "anthropic" ? "ai-provider-btn--active" : ""}`}
+                  onClick={() => {
+                    setProvider("anthropic");
+                    localStorage.setItem("dw-max-provider", "anthropic");
+                    setTestStatus("idle");
+                    window.dispatchEvent(new CustomEvent("dw-api-key-changed"));
+                  }}
+                >Anthropic API</button>
+                <button
+                  className={`ai-provider-btn ${provider === "vertex" ? "ai-provider-btn--active" : ""}`}
+                  onClick={() => {
+                    setProvider("vertex");
+                    localStorage.setItem("dw-max-provider", "vertex");
+                    setTestStatus("idle");
+                    window.dispatchEvent(new CustomEvent("dw-api-key-changed"));
+                  }}
+                >Google Vertex</button>
+              </div>
+
+              {provider === "anthropic" && (
+                <>
+                  <label className="ai-key-label">Anthropic API Key</label>
+                  <input
+                    type="password"
+                    className="ai-key-input"
+                    value={apiKey}
+                    onChange={(e) => {
+                      setApiKey(e.target.value);
+                      localStorage.setItem("dw-max-api-key", e.target.value);
+                      window.dispatchEvent(new CustomEvent("dw-api-key-changed"));
+                    }}
+                    placeholder="sk-ant-..."
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                </>
+              )}
+
+              {provider === "vertex" && (
+                <>
+                  <label className="ai-key-label">Region <span className="ai-key-hint">(default: us-east5)</span></label>
+                  <input
+                    type="text"
+                    className="ai-key-input"
+                    value={vertexRegion}
+                    onChange={(e) => {
+                      setVertexRegion(e.target.value);
+                      localStorage.setItem("dw-max-vertex-region", e.target.value);
+                    }}
+                    placeholder="us-east5"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <p className="ai-vertex-note">
+                    Project auto-detected from <code>gcloud</code>. Ensure ADC is configured.
+                  </p>
+                </>
+              )}
+
+              {/* Test connection */}
+              <button
+                className="ai-test-btn"
+                disabled={testStatus === "testing" || (provider === "anthropic" && !apiKey)}
+                onClick={async () => {
+                  setTestStatus("testing");
+                  setTestMsg("");
+                  try {
+                    const res = await maxTestConnection({
+                      provider,
+                      api_key: apiKey || undefined,
+                      vertex_region: vertexRegion || undefined,
+                    });
+                    if (res.success) {
+                      setTestStatus("ok");
+                      setTestMsg(res.project_id ? `Connected (project: ${res.project_id})` : "Connected ✓");
+                    } else {
+                      setTestStatus("err");
+                      setTestMsg(res.error ?? "Unknown error");
+                    }
+                  } catch (e) {
+                    setTestStatus("err");
+                    setTestMsg(e instanceof Error ? e.message : String(e));
+                  }
                 }}
-                placeholder="sk-ant-..."
-                autoComplete="off"
-                spellCheck={false}
-              />
+              >
+                {testStatus === "testing" ? "Testing…" : "Test Connection"}
+              </button>
+              {testStatus === "ok"  && <p className="ai-test-ok">{testMsg}</p>}
+              {testStatus === "err" && <p className="ai-test-err">{testMsg}</p>}
             </div>
           )}
         </div>

@@ -1,7 +1,8 @@
-"""Max AI assistant — streaming chat and summarization via Anthropic API."""
+"""Max AI assistant — streaming chat and summarization via Anthropic API or Google Vertex AI."""
 from __future__ import annotations
 
 import json
+import subprocess
 from typing import AsyncIterator
 
 import anthropic
@@ -19,6 +20,35 @@ Your role is to help developers:
 When workspace context is provided (script, payload, output, errors, flow summary), use it to give precise, actionable answers. Reference specific lines or values when relevant.
 
 Be concise and technical. Prefer working code examples. When you show DataWeave, use proper %dw 2.0 syntax."""
+
+
+def _gcloud_project() -> str | None:
+    """Auto-detect the active GCP project from gcloud config."""
+    try:
+        result = subprocess.run(
+            ["gcloud", "config", "get-value", "project"],
+            capture_output=True, text=True, timeout=5,
+        )
+        project = result.stdout.strip()
+        return project if project and project != "(unset)" else None
+    except Exception:
+        return None
+
+
+def _make_client(provider: str, api_key: str, vertex_region: str):
+    """Return the appropriate Anthropic async client."""
+    if provider == "vertex":
+        project_id = _gcloud_project()
+        if not project_id:
+            raise RuntimeError(
+                "Could not detect GCP project from gcloud. "
+                "Ensure gcloud is installed and 'gcloud auth application-default login' has been run."
+            )
+        return anthropic.AsyncAnthropicVertex(project_id=project_id, region=vertex_region), project_id
+    else:
+        if not api_key:
+            raise RuntimeError("Anthropic API key is required.")
+        return anthropic.AsyncAnthropic(api_key=api_key), None
 
 
 def _build_system(req: MaxChatRequest) -> str:
@@ -79,8 +109,8 @@ def _convert_messages(req: MaxChatRequest) -> list[dict]:
 
 async def stream_chat(req: MaxChatRequest) -> AsyncIterator[str]:
     """Yield SSE-formatted text chunks from Claude."""
-    client = anthropic.AsyncAnthropic(api_key=req.api_key)
-    system = _build_system(req)
+    client, _ = _make_client(req.provider, req.api_key, req.vertex_region)
+    system   = _build_system(req)
     messages = _convert_messages(req)
 
     async with client.messages.stream(
@@ -90,7 +120,6 @@ async def stream_chat(req: MaxChatRequest) -> AsyncIterator[str]:
         messages=messages,
     ) as stream:
         async for text in stream.text_stream:
-            # SSE format: data: <json>\n\n
             yield f"data: {json.dumps({'text': text})}\n\n"
 
     yield "data: [DONE]\n\n"
@@ -98,7 +127,7 @@ async def stream_chat(req: MaxChatRequest) -> AsyncIterator[str]:
 
 async def summarize(req: MaxSummarizeRequest) -> str:
     """Produce a concise session summary from message history."""
-    client = anthropic.AsyncAnthropic(api_key=req.api_key)
+    client, _ = _make_client(req.provider, req.api_key, req.vertex_region)
 
     history_text = "\n".join(
         f"{m.role.upper()}: " + " ".join(p.text or "" for p in m.content if p.type == "text")
@@ -122,3 +151,17 @@ async def summarize(req: MaxSummarizeRequest) -> str:
         messages=[{"role": "user", "content": "\n".join(prompt_parts)}],
     )
     return response.content[0].text
+
+
+async def test_connection(provider: str, api_key: str, vertex_region: str) -> tuple[bool, str, str]:
+    """Test connectivity. Returns (success, error_message, project_id)."""
+    try:
+        client, project_id = _make_client(provider, api_key, vertex_region)
+        await client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=5,
+            messages=[{"role": "user", "content": "hi"}],
+        )
+        return True, "", project_id or ""
+    except Exception as e:
+        return False, str(e), ""
