@@ -14,9 +14,9 @@ const PORT         = 8000;
 const CONFIG_FILE  = path.join(app.getPath("userData"), "config.json");
 const DW_CLI_DIR   = path.join(app.getPath("userData"), "dw-cli");
 
-// GitHub releases API for the DW CLI
+// GitHub releases API for the DW CLI (repo moved from mulesoft-labs → mulesoft)
 const DW_RELEASES_API =
-  "https://api.github.com/repos/mulesoft-labs/data-weave-cli/releases/latest";
+  "https://api.github.com/repos/mulesoft/data-weave-cli/releases/latest";
 
 // ── Config persistence ────────────────────────────────────────────────────────
 
@@ -34,11 +34,15 @@ function saveConfig(cfg) {
 
 /** Return the DW CLI path if it's already available, otherwise null. */
 function findExistingDwCli() {
-  // 1. Previously downloaded path saved in config
+  // 1. Bundled binary shipped inside the app package
+  const bundled = path.join(process.resourcesPath, "dw-cli", "bin", "dw.exe");
+  if (fs.existsSync(bundled)) return bundled;
+
+  // 2. Previously downloaded path saved in config
   const cfg = loadConfig();
   if (cfg.dwCliPath && fs.existsSync(cfg.dwCliPath)) return cfg.dwCliPath;
 
-  // 2. Check system PATH
+  // 3. Check system PATH
   try {
     const where = execSync("where dw", { stdio: "pipe" }).toString().trim().split("\n")[0].trim();
     if (where && fs.existsSync(where)) return where;
@@ -98,25 +102,34 @@ function fetchWindowsAssetUrl() {
       DW_RELEASES_API,
       { headers: { "User-Agent": "dw-workbench", "Accept": "application/vnd.github.v3+json" } },
       (res) => {
-        let body = "";
-        res.on("data", (d) => (body += d));
-        res.on("end", () => {
-          try {
-            const release = JSON.parse(body);
-            // Look for a Windows zip asset
-            const asset = (release.assets || []).find(
-              (a) =>
-                /windows/i.test(a.name) &&
-                a.name.endsWith(".zip")
-            );
-            if (!asset) reject(new Error("No Windows release asset found."));
-            else resolve({ url: asset.browser_download_url, version: release.tag_name });
-          } catch (e) {
-            reject(e);
-          }
-        });
+        // Follow redirects (GitHub API may redirect)
+        if (res.statusCode === 301 || res.statusCode === 302) {
+          https.get(
+            res.headers.location,
+            { headers: { "User-Agent": "dw-workbench", "Accept": "application/vnd.github.v3+json" } },
+            (res2) => parseRelease(res2, resolve, reject)
+          ).on("error", reject);
+          return;
+        }
+        parseRelease(res, resolve, reject);
       }
     ).on("error", reject);
+  });
+}
+
+function parseRelease(res, resolve, reject) {
+  let body = "";
+  res.on("data", (d) => (body += d));
+  res.on("end", () => {
+    try {
+      const release = JSON.parse(body);
+      // v1.0.36+ ships raw binaries (no zip); match any Windows asset
+      const asset = (release.assets || []).find((a) => /windows/i.test(a.name));
+      if (!asset) { reject(new Error("No Windows release asset found.")); return; }
+      resolve({ url: asset.browser_download_url, version: release.tag_name });
+    } catch (e) {
+      reject(e);
+    }
   });
 }
 
@@ -140,6 +153,7 @@ async function downloadDwCli(loadingWin) {
     return null;
   }
 
+  // v1.0.32+: release asset is a zip containing bin/dw.exe + DLLs + libs/
   const zipPath = path.join(os.tmpdir(), "dw-cli.zip");
   try {
     await downloadFile(assetUrl, zipPath, (recv, total) => {
@@ -165,22 +179,21 @@ async function downloadDwCli(loadingWin) {
     return null;
   }
 
-  // Find dw.bat in the extracted tree
-  const dwBat = findFileRecursive(DW_CLI_DIR, "dw.bat") || findFileRecursive(DW_CLI_DIR, "dw");
-  if (!dwBat) {
+  // Extracted structure: bin/dw.exe + DLLs, libs/*.jar
+  const dwExe = findFileRecursive(DW_CLI_DIR, "dw.exe") || findFileRecursive(DW_CLI_DIR, "dw.bat");
+  if (!dwExe) {
     dialog.showErrorBox(
       "DW CLI Not Found",
-      "Extracted the archive but could not locate dw.bat.\n" +
-      `Check ${DW_CLI_DIR} and set DW_CLI manually.`
+      `Extracted the archive but could not locate dw.exe.\nCheck ${DW_CLI_DIR}.`
     );
     app.quit();
     return null;
   }
 
   const cfg = loadConfig();
-  cfg.dwCliPath = dwBat;
+  cfg.dwCliPath = dwExe;
   saveConfig(cfg);
-  return dwBat;
+  return dwExe;
 }
 
 // ── Loading window ────────────────────────────────────────────────────────────

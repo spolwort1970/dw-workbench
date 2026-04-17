@@ -70,12 +70,16 @@ def run_dw(
 
         cmd += [f"-f={script_file}"]
 
+        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
         try:
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
                 timeout=30,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=flags,
             )
         except FileNotFoundError:
             return {
@@ -84,8 +88,8 @@ def run_dw(
                 "stdout": "",
                 "stderr": "",
                 "error": (
-                    f"DW CLI not found. Ensure '{DW_CLI}' is on PATH "
-                    "or set the DW_CLI environment variable."
+                    f"DW CLI not found at '{DW_CLI}'. "
+                    "Ensure it is bundled with the app or set the DW_CLI environment variable."
                 ),
             }
         except subprocess.TimeoutExpired:
@@ -95,6 +99,22 @@ def run_dw(
                 "stdout": "",
                 "stderr": "",
                 "error": "DW CLI timed out after 30 seconds.",
+            }
+        except OSError as e:
+            return {
+                "success": False,
+                "output": None,
+                "stdout": "",
+                "stderr": "",
+                "error": f"Failed to launch DW CLI '{DW_CLI}': {e}",
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "output": None,
+                "stdout": "",
+                "stderr": "",
+                "error": f"Unexpected error running DW CLI: {e}",
             }
 
         def clean(s: str) -> str:

@@ -6,6 +6,29 @@ echo  DW Workbench — Full Build
 echo ============================================================
 echo.
 
+:: ── Step 0: DW CLI ────────────────────────────────────────────────────────────
+echo [0/4] Fetching DW CLI (if not already present)...
+if not exist "electron\dw-cli\bin\dw.exe" (
+    set DW_CLI_URL=https://github.com/mulesoft/data-weave-cli/releases/download/v1.0.36/dw-1.0.36-Windows
+    set DW_CLI_ZIP=%TEMP%\dw-cli.zip
+    echo       Downloading v1.0.36...
+    powershell -NoProfile -Command "Invoke-WebRequest -Uri 'https://github.com/mulesoft/data-weave-cli/releases/download/v1.0.36/dw-1.0.36-Windows' -OutFile '%TEMP%\dw-cli.zip'"
+    if errorlevel 1 (
+        echo ERROR: Failed to download DW CLI.
+        exit /b 1
+    )
+    echo       Extracting...
+    powershell -NoProfile -Command "Expand-Archive -Path '%TEMP%\dw-cli.zip' -DestinationPath 'electron\dw-cli' -Force"
+    if errorlevel 1 (
+        echo ERROR: Failed to extract DW CLI.
+        exit /b 1
+    )
+    echo       Done: electron\dw-cli\bin\dw.exe
+) else (
+    echo       Already present, skipping download.
+)
+echo.
+
 :: ── Step 1: Frontend ─────────────────────────────────────────────────────────
 echo [1/4] Building frontend (Vite)...
 cd frontend
