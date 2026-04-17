@@ -1,0 +1,86 @@
+name: Build DW Workbench
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: Install frontend dependencies
+      working-directory: frontend
+      run: npm ci
+
+    - name: Build frontend
+      working-directory: frontend
+      run: npm run build
+
+    - name: Install backend dependencies
+      working-directory: backend
+      run: pip install -r requirements.txt pyinstaller
+
+    - name: Build backend (Windows)
+      if: runner.os == 'Windows'
+      working-directory: backend
+      run: python -m PyInstaller --noconfirm server.spec
+
+    - name: Build backend (macOS)
+      if: runner.os == 'macOS'
+      working-directory: backend
+      run: python -m PyInstaller --noconfirm server.spec
+
+    - name: Install Electron dependencies
+      working-directory: electron
+      run: npm ci
+
+    - name: Package app (Windows)
+      if: runner.os == 'Windows'
+      working-directory: electron
+      run: npx electron-packager . "DW Workbench" --platform win32 --arch x64 --out dist --overwrite --extra-resource ../backend/dist/server --icon icon.ico
+
+    - name: Package app (macOS)
+      if: runner.os == 'macOS'
+      working-directory: electron
+      run: npx electron-packager . "DW Workbench" --platform darwin --arch x64 --out dist --overwrite --extra-resource ../backend/dist/server
+
+    - name: Create DMG (macOS)
+      if: runner.os == 'macOS'
+      working-directory: electron
+      run: |
+        npm install --no-save electron-installer-dmg
+        npx electron-installer-dmg "dist/DW Workbench-darwin-x64/DW Workbench.app" "dist/DW-Workbench-macOS" --out=dist --overwrite
+
+    - name: Upload Windows artifact
+      if: runner.os == 'Windows'
+      uses: actions/upload-artifact@v4
+      with:
+        name: DW-Workbench-Windows
+        path: electron/dist/DW Workbench-win32-x64/
+
+    - name: Upload macOS DMG
+      if: runner.os == 'macOS'
+      uses: actions/upload-artifact@v4
+      with:
+        name: DW-Workbench-macOS
+        path: electron/dist/DW-Workbench-macOS.dmg
