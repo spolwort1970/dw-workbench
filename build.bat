@@ -12,7 +12,7 @@ if not exist "electron\dw-cli\bin\dw.exe" (
     set DW_CLI_URL=https://github.com/mulesoft/data-weave-cli/releases/download/v1.0.36/dw-1.0.36-Windows
     set DW_CLI_ZIP=%TEMP%\dw-cli.zip
     echo       Downloading v1.0.36...
-    powershell -NoProfile -Command "Invoke-WebRequest -Uri 'https://github.com/mulesoft/data-weave-cli/releases/download/v1.0.36/dw-1.0.36-Windows' -OutFile '%TEMP%\dw-cli.zip'"
+    powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; Invoke-WebRequest -Uri 'https://github.com/mulesoft/data-weave-cli/releases/download/v1.0.36/dw-1.0.36-Windows' -OutFile '%TEMP%\dw-cli.zip'"
     if errorlevel 1 (
         echo ERROR: Failed to download DW CLI.
         exit /b 1
