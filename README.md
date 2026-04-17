@@ -12,10 +12,10 @@ A local DataWeave workbench with a Mule-style flow simulator. Designed for reaso
 
 ## What It Is Not
 
-- Not a deployable Mule application generator
-- Not a full Anypoint connector library
-- Not a Mule runtime emulator
-- Not a cloud tool — everything runs locally
+- A deployable Mule application generator
+- A full Anypoint connector library
+- A Mule runtime emulator
+- A cloud tool — everything runs locally
 
 ---
 
@@ -29,6 +29,95 @@ A local DataWeave workbench with a Mule-style flow simulator. Designed for reaso
 | DW Execution | DW CLI (local subprocess, auto-downloaded on first run) |
 | Desktop Shell | Electron 31 |
 | Persistence | File-based local projects |
+
+---
+
+## Distribution
+
+### For Surescripts team members
+
+The app builds automatically on every commit. To download the latest version:
+
+1. Visit https://github.com/Surescripts/dw-workbench/actions
+2. Click the most recent **green checkmark** workflow run
+3. Scroll to the bottom "Artifacts" section
+4. Download:
+   - **Windows**: `DW-Workbench-Windows` — extract the zip, run `DW Workbench.exe`
+   - **macOS**: `DW-Workbench-macOS` — open the DMG, drag to Applications
+
+> **Note**: You must be logged into GitHub with Surescripts repository access to download artifacts.
+
+### For external users
+
+External distribution requires creating a GitHub Release:
+- Tag a version (e.g., `v0.1.0`)
+- Create a Release from that tag on the [Releases](../../releases) page
+- Upload the Windows and macOS builds as release assets
+- Share the release URL
+
+On first launch the app automatically downloads the DataWeave CLI from GitHub and stores it locally. Subsequent launches reuse the cached CLI.
+
+### Build from source (optional)
+
+GitHub Actions builds both platforms automatically, but if you need to build manually:
+
+**Requirements**: Node.js 18+, Python 3.11+
+
+**Windows**:
+```bat
+build.bat
+```
+
+**macOS/Linux**:
+```bash
+# Frontend
+cd frontend && npm install && npm run build
+
+# Backend
+cd ../backend && pip install -r requirements.txt pyinstaller
+python -m PyInstaller --noconfirm server.spec
+
+# Electron
+cd ../electron && npm install
+npx electron-packager . "DW Workbench" --platform darwin --arch x64 --out dist --overwrite --extra-resource ../backend/dist/server
+```
+
+### Development mode
+
+```bash
+# Terminal 1 — Backend
+cd backend
+.venv\Scripts\uvicorn app.main:app --reload --port 8000
+
+# Terminal 2 — Frontend
+cd frontend
+npm install
+npm run dev   # http://localhost:5173
+```
+
+### DW CLI (dev mode)
+The DW CLI must be installed and available on `PATH` as `dw`. Download from [MuleSoft](https://docs.mulesoft.com/dataweave/latest/dataweave-cli). In the packaged app it is downloaded automatically.
+
+---
+
+## Getting Started
+
+1. **Download and run** the app for your platform (see Distribution section above)
+2. On first launch, the DataWeave CLI downloads automatically
+3. **Optional: Configure Max AI Assistant**
+   - Click the gear icon (⚙️) in the top-right
+   - Expand "AI (Max)"
+   - Choose a provider:
+     - **Claude Code** (recommended at work) — uses your existing Claude Code authentication, no API key needed
+     - **Anthropic API** (recommended at home) — enter your API key from https://console.anthropic.com/
+   - Click "Test Connection" to verify
+
+**Using Max:**
+- Open the **Max** tab to chat with the AI assistant
+- Max sees your current script, payload, output, and errors automatically
+- Paste screenshots for OCR text extraction (code, errors, JSON)
+- Click **Archive** to summarize and clear the conversation
+- Max remembers context across sessions via summaries
 
 ---
 
@@ -113,46 +202,6 @@ A local DataWeave workbench with a Mule-style flow simulator. Designed for reaso
 - localStorage autosave for browser-refresh recovery
 - File menu: New, Open, Save, Save As, Recent Projects
 - Project holds both Script Console state and Flow Analyzer state
-
----
-
-## Distribution (Windows)
-
-### Run the pre-built app
-
-Unzip `DW-Workbench-win32-x64.zip` and double-click `DW Workbench.exe`. No installer required.
-
-On first launch the app automatically downloads the DataWeave CLI from GitHub and stores it at `%APPDATA%\dw-workbench\dw-cli\`. Subsequent launches reuse the cached CLI.
-
-### Build from source
-
-Requirements: Node.js 18+, Python 3.11+, a virtual environment at `backend/.venv`.
-
-```bat
-build.bat
-```
-
-Four steps run automatically:
-1. `frontend/` — `npm run build` → `frontend/dist/`
-2. `backend/` — PyInstaller → `backend/dist/server/` (self-contained exe + dependencies)
-3. `electron/` — `@electron/packager` → `electron/dist/DW Workbench-win32-x64/`
-4. PowerShell `Compress-Archive` → `electron/dist/DW-Workbench-win32-x64.zip`
-
-### Development mode
-
-```bash
-# Terminal 1 — Backend
-cd backend
-.venv\Scripts\uvicorn app.main:app --reload --port 8000
-
-# Terminal 2 — Frontend
-cd frontend
-npm install
-npm run dev   # http://localhost:5173
-```
-
-### DW CLI (dev mode)
-The DW CLI must be installed and available on `PATH` as `dw`. Download from [MuleSoft](https://docs.mulesoft.com/dataweave/latest/dataweave-cli). In the packaged app it is downloaded automatically.
 
 ---
 

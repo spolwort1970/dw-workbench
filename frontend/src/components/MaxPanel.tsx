@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { createWorker } from 'tesseract.js';
 import { streamMaxChat, maxSummarize } from "../services/api";
 import type { MaxMessage, MaxContext, MaxContentPart } from "../types/max";
 
@@ -81,6 +82,7 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
 
   // ── Refs ────────────────────────────────────────────────────────
   const abortRef           = useRef<AbortController | null>(null);
+  const sendingRef         = useRef(false);
   const messagesEndRef     = useRef<HTMLDivElement>(null);
   const textareaRef        = useRef<HTMLTextAreaElement>(null);
   const fileInputRef       = useRef<HTMLInputElement>(null);
@@ -199,7 +201,7 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
   }, [messages]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Summarize ──────────────────────────────────────────────────
-  const isReady = provider === "vertex" || !!apiKey;
+  const isReady = provider === "vertex" || provider === "claude-cli" || !!apiKey;
 
   const doSummarize = useCallback(async (clearAfter: boolean) => {
     if (!isReady || messages.length === 0) return;
@@ -267,21 +269,49 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
   const handleSend = useCallback(async () => {
     const text = input.trim();
     if (!text && pendingImages.length === 0) return;
-    if (!isReady) return;
+    if (!isReady || sendingRef.current) return;
+    sendingRef.current = true;
 
+    // Capture and clear immediately so the UI blocks further sends during OCR
+    const capturedImages = pendingImages;
+    setInput("");
+    setPendingImages([]);
+    setStreaming(true);
+    sessionStorage.setItem("dw-max-recap-dismissed", "true");
+    setRecap(null);
+
+    // Run OCR on images only for CLI provider (API providers read images natively)
+    const ocrTexts: string[] = [];
+    if (capturedImages.length > 0 && provider === "claude-cli") {
+      try {
+        const worker = await createWorker('eng');
+        for (const img of capturedImages) {
+          const { data: { text: ocrText } } = await worker.recognize(img.dataUrl);
+          if (ocrText.trim()) {
+            ocrTexts.push(ocrText.trim());
+          }
+        }
+        await worker.terminate();
+      } catch (err) {
+        console.error('OCR failed:', err);
+      }
+    }
+
+    const useOcrOnly = provider === "claude-cli";
     const userContent: MaxContentPart[] = [
-      ...pendingImages.map((img): MaxContentPart => ({ type: "image", data: img.data, media_type: img.mimeType })),
+      // For CLI provider: images can't be sent, use OCR text instead
+      // For API providers: send the image directly (Claude reads it natively)
+      ...(!useOcrOnly ? capturedImages.map((img): MaxContentPart => ({ type: "image", data: img.data, media_type: img.mimeType })) : []),
       ...(text ? [{ type: "text" as const, text }] : []),
+      ...(useOcrOnly ? ocrTexts.map((ocrText): MaxContentPart => ({
+        type: "text" as const,
+        text: `\n\n[Text extracted from screenshot]:\n${ocrText}`
+      })) : []),
     ];
 
     const userMsg: MaxMessage = { role: "user", content: userContent };
     const newMessages = [...messages, userMsg];
     setMessages([...newMessages, { role: "assistant", content: [{ type: "text", text: "" }] }]);
-    sessionStorage.setItem("dw-max-recap-dismissed", "true");
-    setRecap(null);
-    setInput("");
-    setPendingImages([]);
-    setStreaming(true);
 
     const abort = new AbortController();
     abortRef.current = abort;
@@ -310,8 +340,9 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
     } finally {
       setStreaming(false);
       abortRef.current = null;
+      sendingRef.current = false;
     }
-  }, [input, pendingImages, messages, apiKey, activeContext, sessionSummary]);
+  }, [input, pendingImages, messages, apiKey, activeContext, sessionSummary, provider, vertexRegion, isReady]);
 
   const handleStop    = useCallback(() => abortRef.current?.abort(), []);
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -383,7 +414,7 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
                 onClick={() => setSnapMenuOpen(v => !v)}
                 title="Snap window to edge"
               >
-                Snap {snapEdge ? `· ${snapEdge}` : "▾"}
+                QuickSnap {snapEdge ? `· ${snapEdge}` : "▾"}
               </button>
               {snapMenuOpen && (
                 <div className="max-snap-menu">
@@ -422,7 +453,7 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
         <>
           {/* Messages */}
           <div className="max-messages">
-            {!isReady && <div className="max-no-key">{provider === "vertex" ? "Configure Google Vertex AI in Settings (gear icon) to use Max." : "Enter your Anthropic API key in Settings (gear icon) to use Max."}</div>}
+            {!isReady && <div className="max-no-key">{provider === "vertex" ? "Configure Google Vertex AI in Settings (gear icon) to use Max." : provider === "claude-cli" ? "Claude Code provider selected — click Test Connection in Settings to verify." : "Enter your Anthropic API key in Settings (gear icon) to use Max."}</div>}
             {recap && (
               <div className="max-recap">
                 <div className="max-recap-header">

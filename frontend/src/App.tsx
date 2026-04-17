@@ -523,7 +523,7 @@ function AppInner() {
         <button
           className="tab tab--about"
           onClick={() => alert(
-            "Version 0.1.0\n\nA visual DataWeave script builder and flow analyzer with debugging for MuleSoft developers. No IDE required. An Anthropic API key is needed to use Max, the built-in AI assistant.\n\nDesigned by Shane Polwort\nBuilt by Claude (Anthropic)\n\nDataWeave CLI provided by MuleSoft, a Salesforce company.\n\n© 2026 Shane Polwort. All rights reserved.",
+            "DW Workbench v0.1.0\n\nA visual DataWeave script builder and flow analysis tool with debugging for MuleSoft API development. No IDE is required for use.\n\nBuilt with Electron, React, FastAPI, and Monaco Editor.\n\nMax AI assistant powered by Claude (Anthropic). Screenshot OCR via tesseract.js.\n\nAvailable for Windows and macOS.\n\nDesigned and built by Shane Polwort with help from Claude Code (Anthropic)\n\nDataWeave CLI © MuleSoft, a Salesforce company.\n\n© 2026 Shane Polwort. All rights reserved.",
             "About DW Workbench"
           )}
           title="About DW Workbench"

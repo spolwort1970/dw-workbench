@@ -2795,11 +2795,11 @@
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
+  background: var(--bg-surface, #252526);
+  border: 1px solid var(--border, #3c3c3c);
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  z-index: 10000;
   min-width: 130px;
   overflow: hidden;
 }

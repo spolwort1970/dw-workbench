@@ -44,7 +44,7 @@ function findExistingDwCli() {
 
   // 3. Check system PATH
   try {
-    const where = execSync("where dw", { stdio: "pipe" }).toString().trim().split("\n")[0].trim();
+    const where = execSync("where dw", { stdio: "pipe", windowsHide: true }).toString().trim().split("\n")[0].trim();
     if (where && fs.existsSync(where)) return where;
   } catch { /* not on PATH */ }
 
@@ -171,7 +171,7 @@ async function downloadDwCli(loadingWin) {
   try {
     execSync(
       `powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${DW_CLI_DIR}' -Force"`,
-      { stdio: "ignore" }
+      { stdio: "ignore", windowsHide: true }
     );
   } catch (e) {
     dialog.showErrorBox("DW CLI Extract Failed", `Extraction error:\n${e.message}`);
@@ -401,20 +401,70 @@ function doUnsnap(childWin) {
 // ── Main window ───────────────────────────────────────────────────────────────
 
 function createMainWindow() {
+  const config = loadConfig();
+  const savedBounds = config.windowBounds;
+
+  const MIN_WIDTH  = 900;
+  const MIN_HEIGHT = 600;
+
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
-    minWidth: 900,
-    minHeight: 600,
+    minWidth: MIN_WIDTH,
+    minHeight: MIN_HEIGHT,
     title: "DW Workbench",
     show: false,
     backgroundColor: "#1e1e1e",
     webPreferences: { contextIsolation: true },
   });
 
+  // Restore saved bounds
+  if (savedBounds && savedBounds.width && savedBounds.height) {
+    const bounds = {
+      x: savedBounds.x,
+      y: savedBounds.y,
+      width: Math.max(savedBounds.width, MIN_WIDTH),
+      height: Math.max(savedBounds.height, MIN_HEIGHT),
+    };
+    win.setBounds(bounds);
+    win.setSize(bounds.width, bounds.height);
+    win.setPosition(bounds.x, bounds.y);
+  }
+
   mainWinRef = win;
   win.loadURL(`http://localhost:${PORT}`);
-  win.once("ready-to-show", () => win.show());
+  win.once("ready-to-show", () => {
+    if (config.windowMaximized) win.maximize();
+    win.show();
+  });
+
+  // Save window bounds on move/resize/close
+  let boundsTimer = null;
+  const saveBounds = () => {
+    if (boundsTimer) clearTimeout(boundsTimer);
+    boundsTimer = setTimeout(() => {
+      if (!win.isDestroyed() && !win.isMinimized()) {
+        const cfg = loadConfig();
+        cfg.windowBounds    = win.isMaximized() ? win.getNormalBounds() : win.getBounds();
+        cfg.windowMaximized = win.isMaximized();
+        saveConfig(cfg);
+      }
+    }, 500);
+  };
+  const saveBoundsNow = () => {
+    if (boundsTimer) clearTimeout(boundsTimer);
+    if (!win.isDestroyed() && !win.isMinimized()) {
+      const cfg = loadConfig();
+      cfg.windowBounds    = win.isMaximized() ? win.getNormalBounds() : win.getBounds();
+      cfg.windowMaximized = win.isMaximized();
+      saveConfig(cfg);
+    }
+  };
+  win.on("move",       saveBounds);
+  win.on("resize",     saveBounds);
+  win.on("maximize",   saveBoundsNow);
+  win.on("unmaximize", saveBoundsNow);
+  win.on("close",      saveBoundsNow);
 
   // Allow Max pop-out window
   win.webContents.setWindowOpenHandler(({ url }) => {

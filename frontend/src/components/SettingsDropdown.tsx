@@ -24,7 +24,6 @@ export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFon
   const [aiExpanded, setAiExpanded] = useState(false);
   const [apiKey, setApiKey]           = useState(() => localStorage.getItem("dw-max-api-key") ?? "");
   const [provider, setProvider]       = useState<MaxProvider>(() => (localStorage.getItem("dw-max-provider") as MaxProvider) ?? "anthropic");
-  const [vertexRegion, setVertexRegion] = useState(() => localStorage.getItem("dw-max-vertex-region") ?? "us-east5");
   const [testStatus, setTestStatus]   = useState<"idle" | "testing" | "ok" | "err">("idle");
   const [testMsg, setTestMsg]         = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -119,7 +118,7 @@ export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFon
           >
             <span className="settings-row-label">AI (Max)</span>
             <span className="settings-row-value">
-              {provider === "vertex" ? "Vertex AI" : apiKey ? "Key set ✓" : "No key"}
+              {provider === "claude-cli" ? "Claude Code ✓" : apiKey ? "Key set ✓" : "No key"}
             </span>
             <span className="settings-row-chevron">{aiExpanded ? "▾" : "▸"}</span>
           </button>
@@ -129,6 +128,15 @@ export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFon
               {/* Provider toggle */}
               <div className="ai-provider-toggle">
                 <button
+                  className={`ai-provider-btn ${provider === "claude-cli" ? "ai-provider-btn--active" : ""}`}
+                  onClick={() => {
+                    setProvider("claude-cli");
+                    localStorage.setItem("dw-max-provider", "claude-cli");
+                    setTestStatus("idle");
+                    window.dispatchEvent(new CustomEvent("dw-api-key-changed"));
+                  }}
+                >Claude Code</button>
+                <button
                   className={`ai-provider-btn ${provider === "anthropic" ? "ai-provider-btn--active" : ""}`}
                   onClick={() => {
                     setProvider("anthropic");
@@ -137,16 +145,13 @@ export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFon
                     window.dispatchEvent(new CustomEvent("dw-api-key-changed"));
                   }}
                 >Anthropic API</button>
-                <button
-                  className={`ai-provider-btn ${provider === "vertex" ? "ai-provider-btn--active" : ""}`}
-                  onClick={() => {
-                    setProvider("vertex");
-                    localStorage.setItem("dw-max-provider", "vertex");
-                    setTestStatus("idle");
-                    window.dispatchEvent(new CustomEvent("dw-api-key-changed"));
-                  }}
-                >Google Vertex</button>
               </div>
+
+              {provider === "claude-cli" && (
+                <p className="ai-vertex-note">
+                  Uses your Claude Code authentication automatically. No API key required.
+                </p>
+              )}
 
               {provider === "anthropic" && (
                 <>
@@ -167,27 +172,6 @@ export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFon
                 </>
               )}
 
-              {provider === "vertex" && (
-                <>
-                  <label className="ai-key-label">Region <span className="ai-key-hint">(default: us-east5)</span></label>
-                  <input
-                    type="text"
-                    className="ai-key-input"
-                    value={vertexRegion}
-                    onChange={(e) => {
-                      setVertexRegion(e.target.value);
-                      localStorage.setItem("dw-max-vertex-region", e.target.value);
-                    }}
-                    placeholder="us-east5"
-                    autoComplete="off"
-                    spellCheck={false}
-                  />
-                  <p className="ai-vertex-note">
-                    Project auto-detected from <code>gcloud</code>. Ensure ADC is configured.
-                  </p>
-                </>
-              )}
-
               {/* Test connection */}
               <button
                 className="ai-test-btn"
@@ -199,7 +183,6 @@ export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFon
                     const res = await maxTestConnection({
                       provider,
                       api_key: apiKey || undefined,
-                      vertex_region: vertexRegion || undefined,
                     });
                     if (res.success) {
                       setTestStatus("ok");

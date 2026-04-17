@@ -22,7 +22,7 @@ export interface MaxContext {
   project_prefs?: string;
 }
 
-export type MaxProvider = "anthropic" | "vertex";
+export type MaxProvider = "anthropic" | "vertex" | "claude-cli";
 
 export interface MaxChatRequest {
   api_key?: string;
