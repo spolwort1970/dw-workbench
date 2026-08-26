@@ -25,12 +25,40 @@ app.include_router(max_router)
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok"}
+    # The nonce identifies the process the desktop app itself launched. A previous
+    # run's server left listening on this port answers /health perfectly well, and
+    # the app would attach to it and serve that build's frontend — so an upgraded
+    # app kept showing old code. main.js compares this value with what it passed.
+    return {"status": "ok", "nonce": os.environ.get("DW_NONCE", "")}
 
 
 # ── Serve frontend static files (production) ──────────────────────────────────
 # Mounted last so API routes always take priority.
 # server.py sets STATIC_DIR before this module is imported.
+
+
+class _NoCacheHtmlStatic(StaticFiles):
+    """
+    StaticFiles that forbids caching of index.html.
+
+    The app upgrades in place: a new build ships new content-hashed asset files but
+    reuses the same URL, http://localhost:8000/. Chromium happily served index.html
+    from its disk cache across upgrades, so an updated app kept booting the previous
+    build's bundle — new code shipped, old code ran, and fixes appeared to do
+    nothing. Hashed assets under /assets/ are immutable by construction and stay
+    cacheable; only the entry document must always be revalidated.
+    """
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        media_type = response.headers.get("content-type", "")
+        if media_type.startswith("text/html"):
+            response.headers["Cache-Control"] = "no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
+
+
 _static_dir = os.environ.get("STATIC_DIR")
 if _static_dir and os.path.isdir(_static_dir):
-    app.mount("/", StaticFiles(directory=_static_dir, html=True), name="static")
+    app.mount("/", _NoCacheHtmlStatic(directory=_static_dir, html=True), name="static")

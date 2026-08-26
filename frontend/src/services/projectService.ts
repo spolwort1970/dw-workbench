@@ -6,36 +6,107 @@ import type {
 } from "../types/project";
 import { MAX_ROLLING_SNAPSHOTS } from "../types/project";
 import { addRecentProject, getWorkspaceFolder } from "./recentProjectsService";
+import { requireNativeFs, getNativeFs, describeFsError, basename, NO_NATIVE_FS } from "./nativeFs";
 
 const AUTOSAVE_KEY  = "dw-autosave";
 const SNAPSHOT_FILE = "autosave.json";
 
-// ── Directory file helpers ────────────────────────────────────────────────────
+/**
+ * A project is an absolute path to its folder. Directory handles from the File
+ * System Access API are gone — Electron 31 never implemented that API, so the
+ * picker silently never opened. See services/nativeFs.ts.
+ */
+export type ProjectDir = string;
 
-async function writeFile(dir: FileSystemDirectoryHandle, name: string, content: string): Promise<void> {
-  const fh       = await dir.getFileHandle(name, { create: true });
-  const writable = await fh.createWritable();
-  await writable.write(content);
-  await writable.close();
+// ── Error reporting ───────────────────────────────────────────────────────────
+// These operations used to swallow every failure and return null, which made a
+// broken directory picker indistinguishable from the user pressing Cancel.
+
+let lastFileError: string | null = null;
+
+/** Message from the most recent failed file operation, or null if it was a cancel. */
+export function getLastFileError(): string | null {
+  return lastFileError;
 }
 
-async function readFile(dir: FileSystemDirectoryHandle, name: string): Promise<string | null> {
+function noteError(e: any): void {
+  lastFileError = describeFsError(e);
+  console.error("[dw-workbench] file operation failed:", e);
+}
+
+// ── Directory picking ─────────────────────────────────────────────────────────
+
+/** Native folder picker. Returns null when the user cancels. */
+export async function pickDirectory(title: string): Promise<ProjectDir | null> {
+  return await requireNativeFs().pickDirectory({
+    title,
+    defaultPath: getWorkspaceFolder(),
+  });
+}
+
+// ── Listing projects in the workspace ─────────────────────────────────────────
+
+export interface ProjectEntry {
+  name:     string;
+  path:     ProjectDir;
+  modified: string;   // ISO date, or "" when project.json has no usable date
+}
+
+/**
+ * Every immediate subfolder of the workspace that holds a project.json.
+ *
+ * This is what makes "Open Project" a list of projects rather than a folder
+ * browser: the workspace folder is configured once, and projects inside it are
+ * addressed by name from then on.
+ */
+export async function listProjects(workspace: ProjectDir): Promise<ProjectEntry[]> {
+  const fs = getNativeFs();
+  if (!fs) return [];
+  let names: string[];
   try {
-    const fh   = await dir.getFileHandle(name);
-    const file = await fh.getFile();
-    return await file.text();
+    names = await fs.list(workspace);
+  } catch {
+    return [];
+  }
+
+  const entries = await Promise.all(names.map(async (name): Promise<ProjectEntry | null> => {
+    try {
+      const dir = await fs.resolve(workspace, name);
+      const raw = await fs.readText(dir, "project.json");
+      if (raw === null) return null;                 // not a project folder
+      let meta: any = {};
+      try { meta = JSON.parse(raw); } catch { /* keep folder name, no date */ }
+      return { name: meta.name || name, path: dir, modified: meta.modified || "" };
+    } catch {
+      return null;                                   // unreadable entry — skip it
+    }
+  }));
+
+  return entries.filter((e): e is ProjectEntry => e !== null)
+    .sort((a, b) => b.modified.localeCompare(a.modified) || a.name.localeCompare(b.name));
+}
+
+// ── Directory file helpers ────────────────────────────────────────────────────
+
+async function writeFile(dir: ProjectDir, name: string, content: string): Promise<void> {
+  await requireNativeFs().writeText([dir, name], content);
+}
+
+async function readFile(dir: ProjectDir, name: string): Promise<string | null> {
+  try {
+    return await requireNativeFs().readText(dir, name);
   } catch {
     return null;
   }
 }
 
-async function getSubDir(
-  dir: FileSystemDirectoryHandle,
-  name: string,
-  create = false,
-): Promise<FileSystemDirectoryHandle | null> {
+async function getSubDir(dir: ProjectDir, name: string, create = false): Promise<ProjectDir | null> {
+  const fs = getNativeFs();
+  if (!fs) return null;
   try {
-    return await dir.getDirectoryHandle(name, { create });
+    if (create) return await fs.mkdirp(dir, name);
+    const path = await fs.resolve(dir, name);
+    return await fs.exists(path) ? path : null;
   } catch {
     return null;
   }
@@ -44,7 +115,7 @@ async function getSubDir(
 // ── Project file I/O ──────────────────────────────────────────────────────────
 
 async function writeProjectFiles(
-  dir: FileSystemDirectoryHandle,
+  dir: ProjectDir,
   meta: ProjectMeta,
   scriptEditor: ScriptEditorState,
   flow: FlowState,
@@ -56,6 +127,12 @@ async function writeProjectFiles(
   await writeFile(dir, "notes.md",      notes);
 }
 
+/** FlowState is `{ flows: [] }`. Tolerate missing files and pre-v2 shapes. */
+function normalizeFlow(raw: any): FlowState {
+  if (raw && Array.isArray(raw.flows)) return raw as FlowState;
+  return { flows: [] };
+}
+
 export interface LoadedProject {
   meta:         ProjectMeta;
   scriptEditor: ScriptEditorState;
@@ -64,7 +141,7 @@ export interface LoadedProject {
   autosaveNewer: boolean;  // true if autosave is newer than last explicit save
 }
 
-async function readProjectFiles(dir: FileSystemDirectoryHandle): Promise<LoadedProject> {
+async function readProjectFiles(dir: ProjectDir): Promise<LoadedProject> {
   const [metaRaw, scriptRaw, flowRaw, notesRaw] = await Promise.all([
     readFile(dir, "project.json"),
     readFile(dir, "script.json"),
@@ -72,9 +149,9 @@ async function readProjectFiles(dir: FileSystemDirectoryHandle): Promise<LoadedP
     readFile(dir, "notes.md"),
   ]);
 
-  const meta:         ProjectMeta       = metaRaw  ? JSON.parse(metaRaw)  : { version: 2, name: dir.name, created: new Date().toISOString(), modified: new Date().toISOString() };
+  const meta:         ProjectMeta       = metaRaw  ? JSON.parse(metaRaw)  : { version: 2, name: basename(dir), created: new Date().toISOString(), modified: new Date().toISOString() };
   const scriptEditor: ScriptEditorState = scriptRaw ? JSON.parse(scriptRaw) : (await import("../types/project")).defaultScriptEditor();
-  const flow:         FlowState         = flowRaw  ? JSON.parse(flowRaw)  : { nodes: [], edges: [] };
+  const flow:         FlowState         = normalizeFlow(flowRaw ? JSON.parse(flowRaw) : null);
   const notes:        string            = notesRaw ?? "";
 
   // Check if autosave is newer than last explicit save
@@ -93,20 +170,19 @@ async function readProjectFiles(dir: FileSystemDirectoryHandle): Promise<LoadedP
 
 // ── Rolling snapshots ─────────────────────────────────────────────────────────
 
-async function pruneSnapshots(snapshotsDir: FileSystemDirectoryHandle): Promise<void> {
-  const names: string[] = [];
-  for await (const [name] of (snapshotsDir as any).entries()) {
-    if (name !== SNAPSHOT_FILE && name.endsWith(".json")) names.push(name);
-  }
-  names.sort();
+async function pruneSnapshots(snapshotsDir: ProjectDir): Promise<void> {
+  const fs = requireNativeFs();
+  const names = (await fs.list(snapshotsDir))
+    .filter((n) => n !== SNAPSHOT_FILE && n.endsWith(".json"))
+    .sort();
   const toDelete = names.slice(0, Math.max(0, names.length - MAX_ROLLING_SNAPSHOTS));
   for (const name of toDelete) {
-    await (snapshotsDir as any).removeEntry(name).catch(() => {});
+    await fs.remove(snapshotsDir, name).catch(() => {});
   }
 }
 
 async function writeRollingSnapshot(
-  dir: FileSystemDirectoryHandle,
+  dir: ProjectDir,
   scriptEditor: ScriptEditorState,
   flow: FlowState,
 ): Promise<void> {
@@ -120,87 +196,98 @@ async function writeRollingSnapshot(
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
-export async function createProject(
+/**
+ * Create `<workspace>/<name>/` and write a fresh project into it.
+ *
+ * The caller supplies the workspace — this never opens a picker. Choosing where
+ * projects live is a one-time decision made through "Select Projects Folder…",
+ * not something to re-answer on every save.
+ */
+export async function createProjectIn(
+  workspace: ProjectDir,
   name: string,
   scriptEditor: ScriptEditorState,
   flow: FlowState,
   notes: string,
-): Promise<FileSystemDirectoryHandle | null> {
+  snapshot = false,
+): Promise<ProjectDir | null> {
+  lastFileError = null;
   try {
-    const workspace = await getWorkspaceFolder();
-    const parentDir = workspace
-      ? workspace
-      : await (window as any).showDirectoryPicker({ mode: "readwrite" });
-    const projectDir = await parentDir.getDirectoryHandle(name, { create: true });
+    const projectDir = await requireNativeFs().mkdirp(workspace, name);
     const meta: ProjectMeta = { version: 2, name, created: new Date().toISOString(), modified: new Date().toISOString() };
     await writeProjectFiles(projectDir, meta, scriptEditor, flow, notes);
-    await addRecentProject({ name, modified: meta.modified, handle: projectDir });
+    if (snapshot) await writeRollingSnapshot(projectDir, scriptEditor, flow);
+    addRecentProject({ name, modified: meta.modified, path: projectDir });
     return projectDir;
-  } catch {
+  } catch (e) {
+    noteError(e);
     return null;
   }
 }
 
-export async function openProject(): Promise<{ loaded: LoadedProject; handle: FileSystemDirectoryHandle } | null> {
+/** Load the project stored in `dir`. */
+export async function openProjectAt(dir: ProjectDir): Promise<{ loaded: LoadedProject; handle: ProjectDir } | null> {
+  lastFileError = null;
   try {
-    const workspace = await getWorkspaceFolder();
-    const opts: any = { mode: "readwrite" };
-    if (workspace) opts.startIn = workspace;
-    const dir = await (window as any).showDirectoryPicker(opts);
     const loaded = await readProjectFiles(dir);
-    await addRecentProject({ name: loaded.meta.name, modified: loaded.meta.modified, handle: dir });
+    addRecentProject({ name: loaded.meta.name, modified: loaded.meta.modified, path: dir });
     return { loaded, handle: dir };
-  } catch {
+  } catch (e) {
+    noteError(e);
     return null;
   }
+}
+
+/** True if `dir` looks like a project folder (has a project.json). */
+export async function isProjectDir(dir: ProjectDir): Promise<boolean> {
+  const fs = getNativeFs();
+  if (!fs) return false;
+  try   { return await fs.exists(dir, "project.json"); }
+  catch { return false; }
 }
 
 export async function saveProject(
-  dir: FileSystemDirectoryHandle,
+  dir: ProjectDir,
   name: string,
   scriptEditor: ScriptEditorState,
   flow: FlowState,
   notes: string,
 ): Promise<boolean> {
+  lastFileError = null;
   try {
     const meta: ProjectMeta = { version: 2, name, created: new Date().toISOString(), modified: new Date().toISOString() };
     await writeProjectFiles(dir, meta, scriptEditor, flow, notes);
     await writeRollingSnapshot(dir, scriptEditor, flow);
-    await addRecentProject({ name, modified: meta.modified, handle: dir });
+    addRecentProject({ name, modified: meta.modified, path: dir });
     return true;
-  } catch {
+  } catch (e) {
+    noteError(e);
     return false;
   }
 }
 
-export async function saveProjectAs(
-  name: string,
-  scriptEditor: ScriptEditorState,
-  flow: FlowState,
-  notes: string,
-): Promise<FileSystemDirectoryHandle | null> {
+export async function openRecentLoadProject(dir: ProjectDir): Promise<LoadedProject | null> {
+  lastFileError = null;
   try {
-    const workspace = await getWorkspaceFolder();
-    const parentDir = workspace
-      ? workspace
-      : await (window as any).showDirectoryPicker({ mode: "readwrite" });
-    const projectDir = await parentDir.getDirectoryHandle(name, { create: true });
-    const meta: ProjectMeta = { version: 2, name, created: new Date().toISOString(), modified: new Date().toISOString() };
-    await writeProjectFiles(projectDir, meta, scriptEditor, flow, notes);
-    await writeRollingSnapshot(projectDir, scriptEditor, flow);
-    await addRecentProject({ name, modified: meta.modified, handle: projectDir });
-    return projectDir;
-  } catch {
+    return await readProjectFiles(dir);
+  } catch (e) {
+    noteError(e);
     return null;
   }
 }
 
-export async function openRecentLoadProject(
-  dir: FileSystemDirectoryHandle,
-): Promise<LoadedProject | null> {
+/** Pick a folder to use as the default location for new projects. */
+export async function pickWorkspaceFolder(): Promise<ProjectDir | null> {
+  lastFileError = null;
+  const fs = getNativeFs();
+  if (!fs) { lastFileError = NO_NATIVE_FS; return null; }
   try {
-    return await readProjectFiles(dir);
-  } catch {
+    return await fs.pickDirectory({
+      title: "Select Projects Folder",
+      defaultPath: getWorkspaceFolder(),
+    });
+  } catch (e) {
+    noteError(e);
     return null;
   }
 }
@@ -208,7 +295,7 @@ export async function openRecentLoadProject(
 // ── Autosave to disk (saved projects) ────────────────────────────────────────
 
 export async function autosaveToDisk(
-  dir: FileSystemDirectoryHandle,
+  dir: ProjectDir,
   scriptEditor: ScriptEditorState,
   flow: FlowState,
 ): Promise<void> {
@@ -220,9 +307,7 @@ export async function autosaveToDisk(
   } catch { /* silently fail */ }
 }
 
-export async function loadAutosaveFromDisk(
-  dir: FileSystemDirectoryHandle,
-): Promise<ProjectSnapshot | null> {
+export async function loadAutosaveFromDisk(dir: ProjectDir): Promise<ProjectSnapshot | null> {
   try {
     const snapshotsDir = await getSubDir(dir, "snapshots");
     if (!snapshotsDir) return null;

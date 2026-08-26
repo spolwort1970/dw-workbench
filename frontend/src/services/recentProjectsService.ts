@@ -1,139 +1,127 @@
-const DB_NAME        = "dw-workbench";
-const STORE_NAME     = "recent-projects";
-const WORKSPACE_STORE = "workspace";
-const MAX_RECENT     = 10;
+import { getNativeFs } from "./nativeFs";
+
+// Recent projects and the workspace folder are plain absolute paths kept in
+// localStorage. They used to be FileSystemDirectoryHandles in IndexedDB, which meant
+// re-granting permission on every restart — and which stopped working entirely once
+// the File System Access API turned out to be unimplemented in Electron 31.
+
+const RECENTS_KEY   = "dw-recent-projects";
+const WORKSPACE_KEY = "dw-workspace-folder";
+const LEGACY_DB     = "dw-workbench";
+const MAX_RECENT    = 10;
 
 export interface RecentProject {
   id: string;
   name: string;
   modified: string;
-  handle: FileSystemDirectoryHandle;
+  path: string;
 }
 
-// ── IndexedDB helpers ─────────────────────────────────────────────────────────
+// ── Storage helpers ───────────────────────────────────────────────────────────
 
-function openDB(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 2);
-    req.onupgradeneeded = (e) => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: "id" });
-      }
-      if (!db.objectStoreNames.contains(WORKSPACE_STORE)) {
-        db.createObjectStore(WORKSPACE_STORE, { keyPath: "id" });
-      }
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror   = () => reject(req.error);
-  });
+/** Windows paths are case-insensitive, and pickers vary on trailing separators. */
+function samePath(a: string, b: string): boolean {
+  const norm = (p: string) => p.replace(/[\\/]+$/, "").replace(/\//g, "\\").toLowerCase();
+  return norm(a) === norm(b);
 }
 
-function txAll(db: IDBDatabase): Promise<RecentProject[]> {
-  return new Promise((resolve, reject) => {
-    const req = db.transaction(STORE_NAME, "readonly").objectStore(STORE_NAME).getAll();
-    req.onsuccess = () => resolve(req.result ?? []);
-    req.onerror   = () => reject(req.error);
-  });
-}
-
-function txWrite(db: IDBDatabase, items: RecentProject[]): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const t     = db.transaction(STORE_NAME, "readwrite");
-    const store = t.objectStore(STORE_NAME);
-    store.clear();
-    for (const r of items) store.put(r);
-    t.oncomplete = () => resolve();
-    t.onerror    = () => reject(t.error);
-  });
-}
-
-function txDelete(db: IDBDatabase, id: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const req = db.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME).delete(id);
-    req.onsuccess = () => resolve();
-    req.onerror   = () => reject(req.error);
-  });
-}
-
-// ── Public API ────────────────────────────────────────────────────────────────
-
-export async function getRecentProjects(): Promise<RecentProject[]> {
+function readRecents(): RecentProject[] {
   try {
-    const db  = await openDB();
-    const all = await txAll(db);
-    return all.sort((a, b) => b.modified.localeCompare(a.modified));
+    const raw = localStorage.getItem(RECENTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((r: any) => r && typeof r.path === "string" && typeof r.name === "string");
   } catch {
     return [];
   }
 }
 
-export async function addRecentProject(project: Omit<RecentProject, "id">): Promise<void> {
+function writeRecents(items: RecentProject[]): void {
   try {
-    const db  = await openDB();
-    const all = await txAll(db);
-
-    const deduped: RecentProject[] = [];
-    for (const r of all) {
-      const same = await r.handle.isSameEntry(project.handle).catch(() => false);
-      if (!same) deduped.push(r);
-    }
-
-    const entry: RecentProject = { ...project, id: crypto.randomUUID() };
-    await txWrite(db, [entry, ...deduped].slice(0, MAX_RECENT));
+    localStorage.setItem(RECENTS_KEY, JSON.stringify(items.slice(0, MAX_RECENT)));
   } catch { /* non-critical */ }
 }
 
-export async function removeRecentProject(id: string): Promise<void> {
-  try {
-    const db = await openDB();
-    await txDelete(db, id);
-  } catch { /* non-critical */ }
+// ── Public API ────────────────────────────────────────────────────────────────
+
+export function getRecentProjects(): RecentProject[] {
+  return readRecents().sort((a, b) => b.modified.localeCompare(a.modified));
+}
+
+export function addRecentProject(project: Omit<RecentProject, "id">): void {
+  if (!project.path) return;
+  const deduped = readRecents().filter((r) => !samePath(r.path, project.path));
+  const entry: RecentProject = { ...project, id: crypto.randomUUID() };
+  writeRecents([entry, ...deduped]);
+}
+
+export function removeRecentProject(id: string): void {
+  writeRecents(readRecents().filter((r) => r.id !== id));
 }
 
 export type OpenRecentResult =
-  | { ok: true;  handle: FileSystemDirectoryHandle }
-  | { ok: false; reason: "permission-denied" | "directory-not-found" | "unavailable" };
+  | { ok: true;  path: string }
+  | { ok: false; reason: "directory-not-found" | "unavailable" };
+
+/** Confirm a recent project's folder is still on disk before opening it. */
+export async function checkRecentProject(recent: RecentProject): Promise<OpenRecentResult> {
+  const fs = getNativeFs();
+  if (!fs) return { ok: false, reason: "unavailable" };
+  try {
+    if (!await fs.exists(recent.path)) {
+      removeRecentProject(recent.id);
+      return { ok: false, reason: "directory-not-found" };
+    }
+    return { ok: true, path: recent.path };
+  } catch {
+    return { ok: false, reason: "unavailable" };
+  }
+}
 
 // ── Workspace folder ──────────────────────────────────────────────────────────
 
-export async function getWorkspaceFolder(): Promise<FileSystemDirectoryHandle | null> {
+export function getWorkspaceFolder(): string | null {
   try {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-      const req = db.transaction(WORKSPACE_STORE, "readonly").objectStore(WORKSPACE_STORE).get("workspace");
-      req.onsuccess = () => resolve(req.result?.handle ?? null);
-      req.onerror   = () => reject(req.error);
-    });
+    return localStorage.getItem(WORKSPACE_KEY) || null;
   } catch {
     return null;
   }
 }
 
-export async function setWorkspaceFolder(handle: FileSystemDirectoryHandle): Promise<void> {
+/**
+ * The workspace folder, falling back to Documents\DW Workbench and remembering it.
+ *
+ * Nothing is asked of the user here. A first save should just work; picking a
+ * folder is only interesting to someone who wants a different one, and that lives
+ * behind "Select Projects Folder…".
+ */
+export async function resolveWorkspaceFolder(): Promise<string | null> {
+  const stored = getWorkspaceFolder();
+  if (stored) return stored;
+  const fs = getNativeFs();
+  if (!fs) return null;
   try {
-    const db = await openDB();
-    await new Promise<void>((resolve, reject) => {
-      const req = db.transaction(WORKSPACE_STORE, "readwrite").objectStore(WORKSPACE_STORE).put({ id: "workspace", handle });
-      req.onsuccess = () => resolve();
-      req.onerror   = () => reject(req.error);
-    });
+    const dir = await fs.defaultWorkspace();
+    if (!dir) return null;
+    setWorkspaceFolder(dir);
+    return dir;
+  } catch {
+    return null;
+  }
+}
+
+export function setWorkspaceFolder(dirPath: string): void {
+  try {
+    localStorage.setItem(WORKSPACE_KEY, dirPath);
   } catch { /* non-critical */ }
 }
 
-export async function requestRecentAccess(recent: RecentProject): Promise<OpenRecentResult> {
-  try {
-    const permission = await (recent.handle as any).requestPermission({ mode: "readwrite" });
-    if (permission !== "granted") return { ok: false, reason: "permission-denied" };
-    // Verify the directory is still accessible
-    try {
-      for await (const _ of (recent.handle as any).entries()) { break; }
-    } catch {
-      await removeRecentProject(recent.id).catch(() => {});
-      return { ok: false, reason: "directory-not-found" };
-    }
-    return { ok: true, handle: recent.handle };
-  } catch {
-    return { ok: false, reason: "unavailable" };
-  }
+/**
+ * Drop the old IndexedDB of directory handles. Nothing can read those handles any
+ * more, and leaving the database around keeps Chromium prompting for access to
+ * folders the app no longer uses.
+ */
+export function clearLegacyHandleStore(): void {
+  try { indexedDB.deleteDatabase(LEGACY_DB); } catch { /* non-critical */ }
 }

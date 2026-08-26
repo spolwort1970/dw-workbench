@@ -171,6 +171,10 @@ const FlowCanvas = forwardRef<FlowCanvasHandle, FlowCanvasProps>(function FlowCa
   }, [onHistoryChange]);
 
   const handleFlowHeightChange = useCallback((flowId: string, height: number) => {
+    // A hidden tab (display:none) or an unmounting container reports offsetHeight 0.
+    // Acting on it makes restack() collapse every flow to the top of the canvas and
+    // then persists that collapsed layout, so ignore it.
+    if (!height) return;
     if (flowHeights.current[flowId] === height) return;
     flowHeights.current[flowId] = height;
     const next = { flows: restack(stateRef.current.flows, flowHeights.current) };

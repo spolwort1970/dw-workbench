@@ -17,11 +17,12 @@ import { DW_LANGUAGE_ID } from "./dwLanguage";
 import { getErrorHint } from "./errorHints";
 import { DialogProvider, useDialog } from "./components/Dialog";
 import {
-  createProject, openProject, saveProject, saveProjectAs,
+  createProjectIn, openProjectAt, saveProject, listProjects, isProjectDir,
   openRecentLoadProject, autosaveToDisk, autosaveToLocal,
-  loadLocalAutosave,
+  loadLocalAutosave, getLastFileError, pickWorkspaceFolder,
 } from "./services/projectService";
-import { addRecentProject, setWorkspaceFolder } from "./services/recentProjectsService";
+import { addRecentProject, setWorkspaceFolder, resolveWorkspaceFolder, clearLegacyHandleStore } from "./services/recentProjectsService";
+import { basename } from "./services/nativeFs";
 import { DEFAULT_PROJECT_NAME, defaultScriptEditor, defaultFlowState, type ScriptEditorState, type FlowState } from "./types/project";
 import type { FlowCanvasState } from "./types/flow";
 import "./App.css";
@@ -71,7 +72,7 @@ export default function App() {
 }
 
 function AppInner() {
-  const { confirm, alert, prompt, setDialogTheme } = useDialog();
+  const { confirm, alert, prompt, select, setDialogTheme } = useDialog();
   const [activeTab, setActiveTab] = useState<Tab>("script");
   const [notesPreview, setNotesPreview] = useState(false);
   const [hintsOpen, setHintsOpen] = useState(false);
@@ -82,7 +83,8 @@ function AppInner() {
   const [projectName, setProjectName] = useState(DEFAULT_PROJECT_NAME);
   const [isDirty, setIsDirty] = useState(false);
   const [notes, setNotes] = useState("");
-  const dirHandleRef  = useRef<FileSystemDirectoryHandle | null>(null);
+  // Absolute path of the project folder on disk, or null while unsaved.
+  const dirPathRef    = useRef<string | null>(null);
   const skipDirtyRef  = useRef(false); // prevents restore from triggering dirty
 
   // Flow canvas state — stored in a ref to avoid re-renders on every node drag
@@ -207,62 +209,142 @@ function AppInner() {
     setCanRedo(false);
   }, []);
 
+  // ── Workspace folder ───────────────────────────────────────────
+  // Projects live inside one folder, defaulting to Documents\DW Workbench. Saves go
+  // there and opens list what is already there, so the filesystem never has to be
+  // navigated for a project the user already named. "Select Projects Folder…"
+  // changes it for anyone who wants it somewhere else.
+
+  /** The workspace path, defaulting to Documents. Null only outside the desktop app. */
+  const ensureWorkspace = useCallback(async (): Promise<string | null> => {
+    const dir = await resolveWorkspaceFolder();
+    if (!dir) {
+      await alert(
+        "Could not determine where to keep projects.\n\n" +
+        "Use File > Select Projects Folder… to choose one.",
+        "Projects Folder",
+      );
+    }
+    return dir;
+  }, [alert]);
+
   // ── File menu actions ──────────────────────────────────────────
   const handleNew = useCallback(async () => {
     if (isDirty && !await confirm("Discard unsaved changes and create a new project?", "New Project", "Discard & Continue")) return;
+    const workspace = await ensureWorkspace();
+    if (!workspace) return;
     const name = await prompt("Project name:", DEFAULT_PROJECT_NAME, "New Project");
     if (!name) return;
     const se = defaultScriptEditor();
     const fl = defaultFlowState();
-    const dir = await createProject(name, se, fl, "");
-    if (!dir) return;
+    const dir = await createProjectIn(workspace, name, se, fl, "");
+    if (!dir) {
+      const err = getLastFileError();
+      if (err) await alert(`Could not create the project folder.\n\n${err}`, "New Project");
+      return;
+    }
     restoreEditorState(se, fl, "", name);
-    dirHandleRef.current = dir;
-  }, [isDirty, restoreEditorState]);
+    dirPathRef.current = dir;
+  }, [isDirty, restoreEditorState, ensureWorkspace]);
 
   const handleOpen = useCallback(async () => {
     if (isDirty && !await confirm("Discard unsaved changes and open a project?", "Open Project", "Discard & Continue")) return;
-    const result = await openProject();
-    if (!result) return;
+
+    const workspace = await ensureWorkspace();
+    if (!workspace) return;
+
+    const BROWSE = " browse";
+    const projects = await listProjects(workspace);
+
+    let chosen: string | null;
+    if (projects.length === 0) {
+      const browse = await confirm(
+        `No projects found in:\n${workspace}\n\nPick a different folder to look in?`,
+        "Open Project", "Browse…",
+      );
+      chosen = browse ? BROWSE : null;
+    } else {
+      chosen = await select(
+        projects.map((p) => ({
+          value:    p.path,
+          label:    p.name,
+          sublabel: p.modified ? new Date(p.modified).toLocaleString() : "",
+        })),
+        { title: "Open Project", message: workspace, altLabel: "Browse…", altValue: BROWSE },
+      );
+    }
+    if (!chosen) return;
+
+    let dir = chosen;
+    if (chosen === BROWSE) {
+      const picked = await (await import("./services/projectService")).pickDirectory("Select Project Folder");
+      if (!picked) return;
+      if (!await isProjectDir(picked)) {
+        await alert("That folder does not contain a DW project (no project.json).", "Open Project");
+        return;
+      }
+      dir = picked;
+    }
+
+    const result = await openProjectAt(dir);
+    if (!result) {
+      const err = getLastFileError();
+      await alert(`Could not open the project.\n\n${err ?? "Unknown error."}`, "Open Project");
+      return;
+    }
     const { loaded, handle } = result;
     if (loaded.autosaveNewer && await confirm("An autosave newer than your last save was found. Restore it?", "Autosave Found", "Restore")) {
       const s = await (await import("./services/projectService")).loadAutosaveFromDisk(handle);
       if (s) {
         restoreEditorState(s.scriptEditor, s.flow, loaded.notes, loaded.meta.name, true);
-        dirHandleRef.current = handle;
+        dirPathRef.current = handle;
         return;
       }
     }
     restoreEditorState(loaded.scriptEditor, loaded.flow, loaded.notes, loaded.meta.name);
-    dirHandleRef.current = handle;
-  }, [isDirty, restoreEditorState]);
+    dirPathRef.current = handle;
+  }, [isDirty, restoreEditorState, ensureWorkspace, select]);
+
+  /** Create `<workspace>/<name>/` and adopt it as the current project. */
+  const saveIntoWorkspace = useCallback(async (name: string, title: string): Promise<boolean> => {
+    const workspace = await ensureWorkspace();
+    if (!workspace) return false;
+    const dir = await createProjectIn(workspace, name, getScriptEditorState(), getFlowState(), notes, true);
+    if (!dir) {
+      const err = getLastFileError();
+      await alert(`Could not save the project.\n\n${err ?? "Unknown error."}`, title);
+      return false;
+    }
+    dirPathRef.current = dir;
+    setProjectName(name);
+    setIsDirty(false);
+    return true;
+  }, [ensureWorkspace, getScriptEditorState, getFlowState, notes, alert]);
 
   const handleSave = useCallback(async () => {
-    if (!dirHandleRef.current) {
-      // Not yet saved — prompt for location
+    if (!dirPathRef.current) {
+      // Never saved — ask for a name, then write it straight into the workspace.
       const name = projectName === DEFAULT_PROJECT_NAME
-        ? (await prompt("Project name:", DEFAULT_PROJECT_NAME, "Save Project") ?? DEFAULT_PROJECT_NAME)
+        ? await prompt("Project name:", DEFAULT_PROJECT_NAME, "Save Project")
         : projectName;
-      const dir = await createProject(name, getScriptEditorState(), getFlowState(), notes);
-      if (!dir) return;
-      dirHandleRef.current = dir;
-      setProjectName(name);
-      setIsDirty(false);
+      if (!name) return;
+      await saveIntoWorkspace(name, "Save Project");
       return;
     }
-    const ok = await saveProject(dirHandleRef.current, projectName, getScriptEditorState(), getFlowState(), notes);
-    if (ok) { setIsDirty(false); }
-  }, [projectName, notes, getScriptEditorState, getFlowState]);
+    const ok = await saveProject(dirPathRef.current, projectName, getScriptEditorState(), getFlowState(), notes);
+    if (ok) {
+      setIsDirty(false);
+    } else {
+      const err = getLastFileError();
+      await alert(`Could not save the project.\n\n${err ?? "Unknown error."}`, "Save Project");
+    }
+  }, [projectName, notes, getScriptEditorState, getFlowState, saveIntoWorkspace, alert]);
 
   const handleSaveAs = useCallback(async () => {
-    const name = await prompt("Project name:", projectName, "Save As") ?? projectName;
-    const dir = await saveProjectAs(name, getScriptEditorState(), getFlowState(), notes);
-    if (dir) {
-      dirHandleRef.current = dir;
-      setProjectName(name);
-      setIsDirty(false);
-    }
-  }, [projectName, notes, getScriptEditorState, getFlowState]);
+    const name = await prompt("Project name:", projectName, "Save As");
+    if (!name) return;
+    await saveIntoWorkspace(name, "Save As");
+  }, [projectName, saveIntoWorkspace]);
 
   const [flowVersion, setFlowVersion] = useState(0);
 
@@ -277,16 +359,24 @@ function AppInner() {
   }, []);
 
   const handleSelectProjectsFolder = useCallback(async () => {
-    try {
-      const handle = await (window as any).showDirectoryPicker({ mode: "readwrite" });
-      await setWorkspaceFolder(handle);
-      await alert(`Projects folder set to "${handle.name}".`, "Projects Folder");
-    } catch {
-      // user cancelled — do nothing
+    const dir = await pickWorkspaceFolder();
+    if (!dir) {
+      const err = getLastFileError();
+      if (err) await alert(`Could not open the folder picker.\n\n${err}`, "Projects Folder");
+      return;  // otherwise the user simply cancelled
     }
-  }, []);
+    setWorkspaceFolder(dir);
+    const found = await listProjects(dir);
+    await alert(
+      `Projects folder set to "${basename(dir)}".\n\n${dir}\n\n` +
+      (found.length
+        ? `${found.length} project${found.length === 1 ? "" : "s"} found here.`
+        : "No projects here yet — new ones will be saved into this folder."),
+      "Projects Folder",
+    );
+  }, [alert]);
 
-  const handleOpenRecent = useCallback(async (handle: FileSystemDirectoryHandle) => {
+  const handleOpenRecent = useCallback(async (handle: string) => {
     if (isDirty && !await confirm("Discard unsaved changes and open this project?", "Open Project", "Discard & Continue")) return;
     const loaded = await openRecentLoadProject(handle);
     if (!loaded) { await alert("Could not read the project files."); return; }
@@ -294,14 +384,14 @@ function AppInner() {
       const snap = await (await import("./services/projectService")).loadAutosaveFromDisk(handle);
       if (snap) {
         restoreEditorState(snap.scriptEditor, snap.flow, loaded.notes, loaded.meta.name, true);
-        dirHandleRef.current = handle;
-        await addRecentProject({ name: loaded.meta.name, modified: loaded.meta.modified, handle });
+        dirPathRef.current = handle;
+        addRecentProject({ name: loaded.meta.name, modified: loaded.meta.modified, path: handle });
         return;
       }
     }
     restoreEditorState(loaded.scriptEditor, loaded.flow, loaded.notes, loaded.meta.name);
-    dirHandleRef.current = handle;
-    await addRecentProject({ name: loaded.meta.name, modified: loaded.meta.modified, handle });
+    dirPathRef.current = handle;
+    addRecentProject({ name: loaded.meta.name, modified: loaded.meta.modified, path: handle });
   }, [isDirty, restoreEditorState]);
 
   // Broadcast context to Max standalone window
@@ -371,18 +461,43 @@ function AppInner() {
   useEffect(() => {
     const se = getScriptEditorState();
     const fl = getFlowState();
-    const timer = setTimeout(() => autosaveToLocal(se, fl, notes, projectName), 2_000);
+    const timer = setTimeout(() => autosaveToLocal(se, fl, notes, projectName), 600);
     return () => clearTimeout(timer);
   }, [script, payloadText, payloadMimeType, outputMimeType, notes, projectName, flowVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Flush the pending autosave when the window closes or is hidden. Without this the
+  // debounce timer is simply destroyed with the renderer, so anything changed in the
+  // last moments before quitting — a flow dropped and then closed — was never written.
+  const flushAutosave = useCallback(() => {
+    try {
+      autosaveToLocal(getScriptEditorState(), getFlowState(), notes, projectName);
+    } catch { /* nothing useful to do while unloading */ }
+  }, [getScriptEditorState, getFlowState, notes, projectName]);
+
+  useEffect(() => {
+    const onVisibility = () => { if (document.visibilityState === "hidden") flushAutosave(); };
+    window.addEventListener("beforeunload", flushAutosave);
+    window.addEventListener("pagehide", flushAutosave);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("beforeunload", flushAutosave);
+      window.removeEventListener("pagehide", flushAutosave);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [flushAutosave]);
+
   // Disk autosave for saved projects (5-minute debounce)
   useEffect(() => {
-    if (!dirHandleRef.current) return;
+    if (!dirPathRef.current) return;
     const se = getScriptEditorState();
     const fl = getFlowState();
-    const timer = setTimeout(() => autosaveToDisk(dirHandleRef.current!, se, fl), 300_000);
+    const timer = setTimeout(() => autosaveToDisk(dirPathRef.current!, se, fl), 300_000);
     return () => clearTimeout(timer);
   }, [script, payloadText, payloadMimeType, outputMimeType, notes, flowVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Recent projects and the workspace folder are plain paths in localStorage now;
+  // drop the old IndexedDB of directory handles so it stops prompting on restart.
+  useEffect(() => { clearLegacyHandleStore(); }, []);
 
   // Silently restore last session on startup
   useEffect(() => {
@@ -677,7 +792,14 @@ function AppInner() {
         </div>
       )}
 
-      {activeTab === "flow" && (
+      {/* Kept mounted across tab switches. Unmounting threw away the live canvas
+          state and remounted from `initialFlow`, which is only refreshed when a
+          project loads — so leaving the tab and coming back showed an empty
+          canvas and then overwrote the saved flows with it. */}
+      <div
+        className="flow-tab-host"
+        style={{ flex: 1, minHeight: 0, display: activeTab === "flow" ? "flex" : "none" }}
+      >
         <FlowCanvas
           key={flowKey}
           ref={flowCanvasRef}
@@ -686,7 +808,7 @@ function AppInner() {
           onChange={handleFlowChange}
           onHistoryChange={handleHistoryChange}
         />
-      )}
+      </div>
 
       {activeTab === "max" && !maxDetached && (
         <MaxPanel

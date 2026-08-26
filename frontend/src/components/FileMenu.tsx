@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { getRecentProjects, requestRecentAccess, removeRecentProject, type RecentProject } from "../services/recentProjectsService";
+import { getRecentProjects, checkRecentProject, removeRecentProject, type RecentProject } from "../services/recentProjectsService";
 import { useDialog } from "./Dialog";
 
 interface Props {
@@ -7,7 +7,7 @@ interface Props {
   onOpen: () => void;
   onSave: () => void;
   onSaveAs: () => void;
-  onOpenRecent: (handle: FileSystemDirectoryHandle) => void;
+  onOpenRecent: (dirPath: string) => void;
   onSelectProjectsFolder: () => void;
 }
 
@@ -19,7 +19,7 @@ export default function FileMenu({ onNew, onOpen, onSave, onSaveAs, onOpenRecent
 
   useEffect(() => {
     if (!open) return;
-    getRecentProjects().then(setRecents);
+    setRecents(getRecentProjects());
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
@@ -31,22 +31,22 @@ export default function FileMenu({ onNew, onOpen, onSave, onSaveAs, onOpenRecent
 
   const handleRecent = async (recent: RecentProject) => {
     setOpen(false);
-    const result = await requestRecentAccess(recent);
+    const result = await checkRecentProject(recent);
     if (!result.ok) {
       if (result.reason === "directory-not-found") {
-        await alert(`"${recent.name}" could not be found. It may have been moved or deleted.`);
+        await alert(`"${recent.name}" could not be found at:\n${recent.path}\n\nIt may have been moved or deleted.`);
         setRecents((prev) => prev.filter((r) => r.id !== recent.id));
-      } else if (result.reason === "permission-denied") {
-        await alert("Permission to access this project folder was denied.");
+      } else {
+        await alert("This project folder is not reachable right now.");
       }
       return;
     }
-    onOpenRecent(result.handle);
+    onOpenRecent(result.path);
   };
 
-  const handleRemoveRecent = async (e: React.MouseEvent, id: string) => {
+  const handleRemoveRecent = (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
-    await removeRecentProject(id);
+    removeRecentProject(id);
     setRecents((prev) => prev.filter((r) => r.id !== id));
   };
 
@@ -83,7 +83,7 @@ export default function FileMenu({ onNew, onOpen, onSave, onSaveAs, onOpenRecent
               <div className="file-menu-divider" />
               <div className="file-menu-section-label">Recent Projects</div>
               {recents.map((r) => (
-                <button key={r.id} className="settings-row recent-row" onClick={() => handleRecent(r)}>
+                <button key={r.id} className="settings-row recent-row" title={r.path} onClick={() => handleRecent(r)}>
                   <RecentIcon />
                   <span className="settings-row-label recent-name">{r.name}</span>
                   <span className="settings-row-value recent-date">

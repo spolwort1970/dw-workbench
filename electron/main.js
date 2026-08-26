@@ -1,7 +1,8 @@
 "use strict";
 
-const { app, BrowserWindow, dialog, Menu, ipcMain, screen } = require("electron");
+const { app, BrowserWindow, dialog, Menu, ipcMain, screen, session } = require("electron");
 const { spawn, execSync }             = require("child_process");
+const { registerFileIpc }             = require("./fileIpc");
 const path   = require("path");
 const fs     = require("fs");
 const http   = require("http");
@@ -235,6 +236,9 @@ function setLoadingMessage(win, msg) {
 
 let backendProcess = null;
 
+// Identifies the backend this launch started, so we never attach to a leftover one.
+const backendNonce = require("crypto").randomBytes(12).toString("hex");
+
 function startBackend(dwCliPath) {
   if (!app.isPackaged) return; // dev: backend runs independently
 
@@ -256,6 +260,7 @@ function startBackend(dwCliPath) {
   const env = {
     ...process.env,
     DW_PORT: String(PORT),
+    DW_NONCE: backendNonce,
     ...(dwCliPath ? { DW_CLI: dwCliPath } : {}),
   };
 
@@ -271,21 +276,41 @@ function startBackend(dwCliPath) {
   );
 }
 
+/**
+ * Wait for our own backend.
+ *
+ * Resolves only when /health reports the nonce this launch generated. A server left
+ * over from a previous run answers /health just as happily, and attaching to it
+ * means the window is served that build's frontend — which is how an upgraded app
+ * silently kept running old code. In dev the backend is started by hand and has no
+ * nonce, so an empty nonce is accepted when unpackaged.
+ */
 function waitForBackend(retries = 40) {
   return new Promise((resolve, reject) => {
     let attempts = 0;
+    let sawForeign = false;
     const check = () => {
       const req = http.get(`http://localhost:${PORT}/health`, (res) => {
-        if (res.statusCode === 200) resolve();
-        else retry();
-        res.resume();
+        let body = "";
+        res.on("data", (d) => (body += d));
+        res.on("end", () => {
+          if (res.statusCode !== 200) return retry();
+          let nonce = null;
+          try { nonce = JSON.parse(body).nonce ?? null; } catch { /* old build */ }
+          if (nonce === backendNonce || (!app.isPackaged && !nonce)) return resolve();
+          sawForeign = true;
+          retry();
+        });
       });
       req.on("error", retry);
       req.setTimeout(1000, () => { req.destroy(); retry(); });
     };
     const retry = () => {
-      if (++attempts >= retries) reject(new Error("Backend did not become ready."));
-      else setTimeout(check, 500);
+      if (++attempts >= retries) {
+        reject(new Error(sawForeign ? "FOREIGN_BACKEND" : "Backend did not become ready."));
+      } else {
+        setTimeout(check, 500);
+      }
     };
     check();
   });
@@ -415,7 +440,13 @@ function createMainWindow() {
     title: "DW Workbench",
     show: false,
     backgroundColor: "#1e1e1e",
-    webPreferences: { contextIsolation: true },
+    webPreferences: {
+      contextIsolation: true,
+      // Without this the main window had no bridge at all — window.electronAPI was
+      // undefined and only the Max pop-out (which sets its own preload) could reach
+      // the main process.
+      preload: path.join(__dirname, "preload.js"),
+    },
   });
 
   // Restore saved bounds
@@ -432,7 +463,12 @@ function createMainWindow() {
   }
 
   mainWinRef = win;
-  win.loadURL(`http://localhost:${PORT}`);
+  // Force the entry document to be revalidated instead of read from Chromium's disk
+  // cache. Every build serves a new content-hashed bundle from the same URL, so a
+  // cached index.html made an upgraded app boot the previous build's frontend —
+  // shipped fixes simply never ran. The backend also sends no-store for HTML; this
+  // side repairs caches already poisoned by an earlier build.
+  win.loadURL(`http://localhost:${PORT}`, { extraHeaders: "pragma: no-cache\n" });
   win.once("ready-to-show", () => {
     if (config.windowMaximized) win.maximize();
     win.show();
@@ -579,7 +615,45 @@ ipcMain.on("max-hover-ghost", () => {
 
 // ── App lifecycle ─────────────────────────────────────────────────────────────
 
+/**
+ * The renderer only ever loads http://localhost:<PORT>, so grant permissions there
+ * and refuse everything else. File access is not brokered here — it goes through the
+ * ipcMain "files:*" handlers above.
+ */
+function installPermissionHandlers() {
+  const ORIGIN = `http://localhost:${PORT}`;
+  const isOurs = (url) => typeof url === "string" && url.startsWith(ORIGIN);
+  const ALLOWED = new Set(["clipboard-read", "clipboard-sanitized-write"]);
+
+  session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => {
+    const url = details?.requestingUrl || wc?.getURL?.() || "";
+    callback(ALLOWED.has(permission) && isOurs(url));
+  });
+
+  session.defaultSession.setPermissionCheckHandler((wc, permission, requestingOrigin, details) => {
+    const url = requestingOrigin || details?.requestingUrl || wc?.getURL?.() || "";
+    return ALLOWED.has(permission) && isOurs(url);
+  });
+}
+
+// Two copies of the app cannot both own port 8000; the loser would attach to the
+// winner's backend. Focus the existing window instead of starting a second app.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (mainWinRef && !mainWinRef.isDestroyed()) {
+      if (mainWinRef.isMinimized()) mainWinRef.restore();
+      mainWinRef.focus();
+    }
+  });
+}
+
 app.whenReady().then(async () => {
+  if (!app.hasSingleInstanceLock()) return;
+  installPermissionHandlers();
+  registerFileIpc(() => mainWinRef);
+
   const loadingWin = createLoadingWindow();
 
   // 1. Resolve DW CLI
@@ -598,9 +672,14 @@ app.whenReady().then(async () => {
     await waitForBackend();
   } catch (e) {
     dialog.showErrorBox(
-      "Backend Startup Timeout",
-      "The backend server did not start in time.\n" +
-      "Try restarting DW Workbench."
+      e.message === "FOREIGN_BACKEND" ? "DW Workbench Already Running" : "Backend Startup Timeout",
+      e.message === "FOREIGN_BACKEND"
+        ? `Another DW Workbench backend is already using port ${PORT}.\n\n` +
+          "It is left over from a previous run, and using it would show you that " +
+          "version of the app instead of this one.\n\n" +
+          "Close the other DW Workbench (or end the stray \"server.exe\" in Task " +
+          "Manager) and start this one again."
+        : "The backend server did not start in time.\nTry restarting DW Workbench."
     );
     if (backendProcess) backendProcess.kill();
     app.quit();

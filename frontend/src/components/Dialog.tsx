@@ -2,7 +2,21 @@ import { createContext, useCallback, useContext, useRef, useState } from "react"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type DialogType = "alert" | "confirm" | "prompt";
+type DialogType = "alert" | "confirm" | "prompt" | "select";
+
+export interface SelectItem {
+  value:     string;
+  label:     string;
+  sublabel?: string;
+}
+
+export interface SelectOptions {
+  title?:    string;
+  message?:  string;
+  /** Secondary button, e.g. "Browse…" — resolves to `altValue`. */
+  altLabel?: string;
+  altValue?: string;
+}
 
 interface DialogState {
   type: DialogType;
@@ -11,6 +25,9 @@ interface DialogState {
   confirmLabel: string;
   cancelLabel: string;
   defaultValue: string;
+  items: SelectItem[];
+  altLabel: string;
+  altValue: string;
   resolve: (value: any) => void;
 }
 
@@ -18,6 +35,8 @@ interface DialogContextValue {
   alert:          (message: string, title?: string) => Promise<void>;
   confirm:        (message: string, title?: string, confirmLabel?: string) => Promise<boolean>;
   prompt:         (message: string, defaultValue?: string, title?: string) => Promise<string | null>;
+  /** Pick one item from a list. Resolves to its value, `altValue`, or null if cancelled. */
+  select:         (items: SelectItem[], opts?: SelectOptions) => Promise<string | null>;
   setDialogTheme: (theme: string) => void;
 }
 
@@ -47,13 +66,28 @@ export function DialogProvider({ children, theme = "vs-dark" }: { children: Reac
     setDialog(null);
   }, [dialog]);
 
+  const base = { items: [] as SelectItem[], altLabel: "", altValue: "" };
+
   const ctx: DialogContextValue = {
     alert: (message, title = "Notice") =>
-      open({ type: "alert", title, message, confirmLabel: "OK", cancelLabel: "", defaultValue: "" }),
+      open({ ...base, type: "alert", title, message, confirmLabel: "OK", cancelLabel: "", defaultValue: "" }),
     confirm: (message, title = "Confirm", confirmLabel = "OK") =>
-      open({ type: "confirm", title, message, confirmLabel, cancelLabel: "Cancel", defaultValue: "" }),
+      open({ ...base, type: "confirm", title, message, confirmLabel, cancelLabel: "Cancel", defaultValue: "" }),
     prompt: (message, defaultValue = "", title = "Input") =>
-      open({ type: "prompt", title, message, confirmLabel: "OK", cancelLabel: "Cancel", defaultValue }),
+      open({ ...base, type: "prompt", title, message, confirmLabel: "OK", cancelLabel: "Cancel", defaultValue }),
+    select: (items, opts = {}) =>
+      open({
+        ...base,
+        type: "select",
+        title:   opts.title   ?? "Select",
+        message: opts.message ?? "",
+        confirmLabel: "",
+        cancelLabel:  "Cancel",
+        defaultValue: "",
+        items,
+        altLabel: opts.altLabel ?? "",
+        altValue: opts.altValue ?? "",
+      }),
     setDialogTheme: setActiveTheme,
   };
 
@@ -68,7 +102,7 @@ export function DialogProvider({ children, theme = "vs-dark" }: { children: Reac
   };
 
   const handleCancel = () => {
-    if (dialog?.type === "prompt") close(null);
+    if (dialog?.type === "prompt" || dialog?.type === "select") close(null);
     else close(false);
   };
 
@@ -102,15 +136,38 @@ export function DialogProvider({ children, theme = "vs-dark" }: { children: Reac
               />
             )}
 
+            {dialog.type === "select" && (
+              <div className="dialog-list">
+                {dialog.items.map((item) => (
+                  <button
+                    key={item.value}
+                    className="dialog-list-item"
+                    title={item.value}
+                    onClick={() => close(item.value)}
+                  >
+                    <span className="dialog-list-label">{item.label}</span>
+                    {item.sublabel && <span className="dialog-list-sublabel">{item.sublabel}</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="dialog-actions">
               {dialog.cancelLabel && (
                 <button className="dialog-btn dialog-btn--cancel" onClick={handleCancel}>
                   {dialog.cancelLabel}
                 </button>
               )}
-              <button className="dialog-btn dialog-btn--confirm" onClick={handleConfirm} autoFocus={dialog.type !== "prompt"}>
-                {dialog.confirmLabel}
-              </button>
+              {dialog.altLabel && (
+                <button className="dialog-btn dialog-btn--cancel" onClick={() => close(dialog.altValue)}>
+                  {dialog.altLabel}
+                </button>
+              )}
+              {dialog.confirmLabel && (
+                <button className="dialog-btn dialog-btn--confirm" onClick={handleConfirm} autoFocus={dialog.type !== "prompt"}>
+                  {dialog.confirmLabel}
+                </button>
+              )}
             </div>
           </div>
         </div>
