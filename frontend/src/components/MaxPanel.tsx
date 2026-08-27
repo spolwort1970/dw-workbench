@@ -5,13 +5,16 @@ import { streamMaxChat, maxSummarize } from "../services/api";
 import type { MaxMessage, MaxContext, MaxContentPart, MaxModelFamily } from "../types/max";
 import type { FlowDef } from "../types/flow";
 import { extractDwFlowBlocks, stripDwFlowBlocks, type DwFlowBlock } from "../services/flowSpec";
+import { extractDwScriptBlocks, stripDwScriptBlocks, type DwScriptBlock, type ScriptEdit } from "../services/scriptSpec";
 
 /** Channel used by the popped-out window to send flows back to the canvas. */
 export const MAX_APPLY_CHANNEL = "dw-max-apply";
 
 export interface ApplyFlowsMessage {
-  flows: FlowDef[];
-  mode:  "add" | "replace";
+  flows?: FlowDef[];
+  mode?:  "add" | "replace";
+  /** Set instead of `flows` when the block targets the Script Console. */
+  scriptEdit?: ScriptEdit;
 }
 
 const AUTO_SUMMARY_INTERVAL_MS = 30 * 60 * 1000;
@@ -36,9 +39,11 @@ interface Props {
   /** Apply flows Max wrote to the canvas. Absent in the popped-out window,
    *  which has no canvas of its own and posts over MAX_APPLY_CHANNEL instead. */
   onApplyFlows?: (flows: FlowDef[], mode: "add" | "replace") => void;
+  /** Apply a Script Console edit Max wrote. Absent in the popped-out window. */
+  onApplyScript?: (edit: ScriptEdit) => void;
 }
 
-export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows }: Props) {
+export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows, onApplyScript }: Props) {
   // ── Panel sizing (docked only) ──────────────────────────────────
   const [collapsed,   setCollapsed]   = useState(false);
   const [panelHeight, setPanelHeight] = useState(DEFAULT_PANEL_HEIGHT);
@@ -95,6 +100,12 @@ export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows
   const [modelFamily,  setModelFamily]  = useState<MaxModelFamily>(
     () => (localStorage.getItem("dw-max-model-family") as MaxModelFamily) ?? "sonnet"
   );
+  // When on, Max's edits land as soon as a reply finishes instead of waiting for
+  // a click. Off by default: a model that misreads a request should not be able
+  // to overwrite the user's work unprompted.
+  const [autoApply, setAutoApply] = useState(
+    () => localStorage.getItem("dw-max-auto-apply") === "true"
+  );
 
   // ── Refs ────────────────────────────────────────────────────────
   const abortRef           = useRef<AbortController | null>(null);
@@ -113,6 +124,7 @@ export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows
       setProvider(localStorage.getItem("dw-max-provider") ?? "anthropic");
       setVertexRegion(localStorage.getItem("dw-max-vertex-region") ?? "us-east5");
       setModelFamily((localStorage.getItem("dw-max-model-family") as MaxModelFamily) ?? "sonnet");
+      setAutoApply(localStorage.getItem("dw-max-auto-apply") === "true");
     };
     window.addEventListener("dw-api-key-changed", handler);
     return () => window.removeEventListener("dw-api-key-changed", handler);
@@ -141,6 +153,50 @@ export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows
     ch.postMessage({ flows, mode: applyMode } satisfies ApplyFlowsMessage);
     ch.close();
   }, [onApplyFlows]);
+
+  // Read inside the send() closure, which captures state from before the reply.
+  const autoApplyRef = useRef(autoApply);
+  useEffect(() => { autoApplyRef.current = autoApply; }, [autoApply]);
+
+  const applyScript = useCallback((edit: ScriptEdit) => {
+    if (onApplyScript) { onApplyScript(edit); return; }
+    const ch = new BroadcastChannel(MAX_APPLY_CHANNEL);
+    ch.postMessage({ scriptEdit: edit } satisfies ApplyFlowsMessage);
+    ch.close();
+  }, [onApplyScript]);
+
+  /**
+   * Apply every block in the newest assistant message that hasn't been applied.
+   *
+   * Keyed on the same block hash the cards use, so an auto-applied block shows as
+   * already applied if the user opens the tab, and re-rendering never re-applies.
+   */
+  const applyPendingBlocks = useCallback(() => {
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (last?.role !== "assistant") return prev;
+      const text = last.content.filter((p) => p.type === "text").map((p) => p.text ?? "").join("");
+      const applied = readApplied();
+      let touched = false;
+
+      for (const b of extractDwFlowBlocks(text)) {
+        if (b.parseError || !b.flows.length || applied[b.key]) continue;
+        applyFlows(b.flows, "add");
+        applied[b.key] = "add";
+        touched = true;
+      }
+      for (const b of extractDwScriptBlocks(text)) {
+        if (b.parseError || !b.changes.length || applied[b.key]) continue;
+        applyScript(b.edit);
+        applied[b.key] = "add";
+        touched = true;
+      }
+      if (touched) {
+        try { localStorage.setItem(APPLIED_KEY, JSON.stringify(applied)); } catch { /* non-critical */ }
+      }
+      return prev;   // messages are unchanged; this hook only reads the latest
+    });
+  }, [applyFlows, applyScript]);
 
   // Standalone: listen for ghost + snap state from main process
   useEffect(() => {
@@ -369,8 +425,12 @@ export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows
       setStreaming(false);
       abortRef.current = null;
       sendingRef.current = false;
+      // Auto-apply runs here rather than mid-stream: a block is only complete
+      // once the reply is, and applying a half-written one would put a partial
+      // flow on the canvas and then have to undo it.
+      if (autoApplyRef.current) applyPendingBlocks();
     }
-  }, [input, pendingImages, messages, apiKey, activeContext, sessionSummary, provider, vertexRegion, isReady]);
+  }, [input, pendingImages, messages, apiKey, activeContext, sessionSummary, provider, vertexRegion, isReady, applyPendingBlocks]);
 
   const handleStop    = useCallback(() => abortRef.current?.abort(), []);
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -500,13 +560,18 @@ export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows
                     if (part.type === "image" && part.data)
                       return <img key={j} className="max-image-thumb" src={`data:${part.media_type};base64,${part.data}`} alt="attached" />;
                     if (msg.role === "assistant") {
-                      const text   = part.text ?? "";
-                      const blocks = extractDwFlowBlocks(text);
+                      const text    = part.text ?? "";
+                      const flows   = extractDwFlowBlocks(text);
+                      const scripts = extractDwScriptBlocks(text);
+                      const prose   = stripDwScriptBlocks(stripDwFlowBlocks(text));
                       return (
                         <div key={j}>
-                          <ReactMarkdown>{blocks.length ? stripDwFlowBlocks(text) : text}</ReactMarkdown>
-                          {blocks.map((b) => (
-                            <FlowApplyCard key={b.index} block={b} onApply={applyFlows} />
+                          <ReactMarkdown>{flows.length || scripts.length ? prose : text}</ReactMarkdown>
+                          {flows.map((b) => (
+                            <FlowApplyCard key={`f${b.index}`} block={b} onApply={applyFlows} autoApplied={autoApply} />
+                          ))}
+                          {scripts.map((b) => (
+                            <ScriptApplyCard key={`s${b.index}`} block={b} onApply={applyScript} autoApplied={autoApply} />
                           ))}
                         </div>
                       );
@@ -602,8 +667,12 @@ function readApplied(): Record<string, "add" | "replace"> {
   catch { return {}; }
 }
 
-function FlowApplyCard({ block, onApply }: { block: DwFlowBlock; onApply: (flows: FlowDef[], mode: "add" | "replace") => void }) {
+function FlowApplyCard({ block, onApply, autoApplied }: { block: DwFlowBlock; onApply: (flows: FlowDef[], mode: "add" | "replace") => void; autoApplied?: boolean }) {
   const [applied, setApplied] = useState<"add" | "replace" | null>(() => readApplied()[block.key] ?? null);
+  // Auto-apply writes the same key, so re-check once the store settles.
+  useEffect(() => {
+    if (autoApplied && !applied) setApplied(readApplied()[block.key] ?? null);
+  }, [autoApplied, applied, block.key]);
 
   if (block.parseError) {
     return (
@@ -651,6 +720,66 @@ function FlowApplyCard({ block, onApply }: { block: DwFlowBlock; onApply: (flows
         <div className="max-flow-card-actions">
           <button className="max-flow-btn max-flow-btn--primary" onClick={() => run("add")}>Add to canvas</button>
           <button className="max-flow-btn" onClick={() => run("replace")} title="Discard the current flows and use these instead">Replace canvas</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/**
+ * The control that applies a Script Console edit Max wrote.
+ *
+ * Same contract as FlowApplyCard: nothing changes until the user presses it
+ * (unless auto-apply is on), and it names exactly which fields will change so a
+ * payload-only edit can't be mistaken for a rewrite of the script.
+ */
+function ScriptApplyCard({ block, onApply, autoApplied }: { block: DwScriptBlock; onApply: (edit: ScriptEdit) => void; autoApplied?: boolean }) {
+  const [applied, setApplied] = useState<boolean>(() => !!readApplied()[block.key]);
+  useEffect(() => {
+    if (autoApplied && !applied) setApplied(!!readApplied()[block.key]);
+  }, [autoApplied, applied, block.key]);
+
+  if (block.parseError) {
+    return (
+      <div className="max-flow-card max-flow-card--bad">
+        <span className="max-flow-card-title">Max sent a script edit, but it could not be read</span>
+        <span className="max-flow-card-detail">{block.parseError}</span>
+      </div>
+    );
+  }
+  if (!block.changes.length) {
+    return (
+      <div className="max-flow-card max-flow-card--bad">
+        <span className="max-flow-card-title">Max sent a script edit with nothing to apply</span>
+        {block.errors.slice(0, 3).map((e, i) => <span key={i} className="max-flow-card-detail">{e}</span>)}
+      </div>
+    );
+  }
+
+  const run = () => {
+    onApply(block.edit);
+    setApplied(true);
+    try { localStorage.setItem(APPLIED_KEY, JSON.stringify({ ...readApplied(), [block.key]: "add" })); }
+    catch { /* remembering is a convenience, not worth failing the apply */ }
+  };
+
+  return (
+    <div className="max-flow-card">
+      <span className="max-flow-card-title">
+        Script Console edit: <strong>{block.changes.join(", ")}</strong>
+      </span>
+      {block.errors.length > 0 && (
+        <span className="max-flow-card-detail">{block.errors[0]}</span>
+      )}
+      {applied ? (
+        <span className="max-flow-card-done">
+          Applied to the Script Console
+          <button className="max-flow-btn max-flow-card-again" onClick={run}>Apply again</button>
+        </span>
+      ) : (
+        <div className="max-flow-card-actions">
+          <button className="max-flow-btn max-flow-btn--primary" onClick={run}>Apply to Script Console</button>
         </div>
       )}
     </div>

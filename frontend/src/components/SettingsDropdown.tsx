@@ -25,6 +25,7 @@ export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFon
   const [apiKey, setApiKey]           = useState(() => localStorage.getItem("dw-max-api-key") ?? "");
   const [provider, setProvider]       = useState<MaxProvider>(() => (localStorage.getItem("dw-max-provider") as MaxProvider) ?? "anthropic");
   const [modelFamily, setModelFamily] = useState<MaxModelFamily>(() => (localStorage.getItem("dw-max-model-family") as MaxModelFamily) ?? "sonnet");
+  const [autoApply, setAutoApply] = useState(() => localStorage.getItem("dw-max-auto-apply") === "true");
   const [testStatus, setTestStatus]   = useState<"idle" | "testing" | "ok" | "err">("idle");
   const [testMsg, setTestMsg]         = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -192,6 +193,35 @@ export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFon
               </div>
               <p className="ai-vertex-note">
                 {MODEL_FAMILIES.find((f) => f.value === modelFamily)?.hint} — always the latest release.
+              </p>
+
+              {/* Auto-apply — off by default so a misread request can't silently
+                  overwrite the user's script or canvas. */}
+              <label className="ai-key-label">Max edits</label>
+              <div className="ai-provider-toggle">
+                <button
+                  className={`ai-provider-btn ${!autoApply ? "ai-provider-btn--active" : ""}`}
+                  title="Max proposes changes; you press a button to apply them"
+                  onClick={() => {
+                    setAutoApply(false);
+                    localStorage.setItem("dw-max-auto-apply", "false");
+                    window.dispatchEvent(new CustomEvent("dw-api-key-changed"));
+                  }}
+                >Ask first</button>
+                <button
+                  className={`ai-provider-btn ${autoApply ? "ai-provider-btn--active" : ""}`}
+                  title="Max's changes land as soon as a reply finishes"
+                  onClick={() => {
+                    setAutoApply(true);
+                    localStorage.setItem("dw-max-auto-apply", "true");
+                    window.dispatchEvent(new CustomEvent("dw-api-key-changed"));
+                  }}
+                >Apply automatically</button>
+              </div>
+              <p className="ai-vertex-note">
+                {autoApply
+                  ? "Max writes to the Script Console and canvas without asking. Ctrl+Z undoes canvas changes."
+                  : "Max proposes changes and you apply them with a button."}
               </p>
 
               {/* Test connection */}

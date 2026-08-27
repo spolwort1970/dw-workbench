@@ -24,6 +24,7 @@ import {
 import { addRecentProject, setWorkspaceFolder, resolveWorkspaceFolder, clearLegacyHandleStore } from "./services/recentProjectsService";
 import { basename } from "./services/nativeFs";
 import { summarizeFlowState } from "./services/flowSummary";
+import type { ScriptEdit } from "./services/scriptSpec";
 import { DEFAULT_PROJECT_NAME, defaultScriptEditor, defaultFlowState, type ScriptEditorState, type FlowState } from "./types/project";
 import type { FlowCanvasState, FlowDef } from "./types/flow";
 import "./App.css";
@@ -435,15 +436,35 @@ function AppInner() {
     setActiveTab("flow");
   }, []);
 
-  // The popped-out Max window has no canvas, so it posts flows back over here.
+  /**
+   * Apply a Script Console edit Max wrote. Mirrors handleApplyFlows: same review
+   * step, same tab switch. Every field is optional, so Max can change just the
+   * payload without having to restate the script.
+   */
+  const handleApplyScript = useCallback((edit: ScriptEdit) => {
+    if (edit.script !== undefined) setScript(edit.script);
+    if (edit.payload !== undefined) setPayloadText(edit.payload);
+    if (edit.inputMimeType) {
+      const m = MIME_TYPES.find((x) => x.value === edit.inputMimeType);
+      if (m) setPayloadMimeType(m);
+    }
+    if (edit.outputMimeType) {
+      const m = MIME_TYPES.find((x) => x.value === edit.outputMimeType);
+      if (m) setOutputMimeType(m);
+    }
+    setActiveTab("script");
+  }, []);
+
+  // The popped-out Max window has no canvas or editor, so it posts edits back here.
   useEffect(() => {
     const ch = new BroadcastChannel(MAX_APPLY_CHANNEL);
     ch.onmessage = (e) => {
-      const msg = e.data as ApplyFlowsMessage | undefined;
+      const msg = e.data as (ApplyFlowsMessage & { scriptEdit?: ScriptEdit }) | undefined;
       if (msg?.flows?.length) handleApplyFlows(msg.flows, msg.mode === "replace" ? "replace" : "add");
+      else if (msg?.scriptEdit) handleApplyScript(msg.scriptEdit);
     };
     return () => ch.close();
-  }, [handleApplyFlows]);
+  }, [handleApplyFlows, handleApplyScript]);
 
   // Pop-out Max window
   const handleMaxPopOut = useCallback(() => {
@@ -848,6 +869,7 @@ function AppInner() {
           context={buildMaxContext()}
           onPopOut={handleMaxPopOut}
           onApplyFlows={handleApplyFlows}
+          onApplyScript={handleApplyScript}
         />
       )}
 

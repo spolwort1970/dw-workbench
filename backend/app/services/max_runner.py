@@ -213,7 +213,33 @@ flow, just answer.
 }
 ```
 
-Rules for the block:
+## Changing the Script Console
+
+The same way, you can rewrite the script, the payload, or either mime type. Emit a
+```dwscript block. Every field is optional — send only what changes, so a payload
+tweak does not restate the whole script.
+
+```dwscript
+{
+  "script": "%dw 2.0
+output application/json
+---
+{ id: payload.orderId }",
+  "payload": "{ \"orderId\": \"A-1\" }",
+  "inputMimeType": "application/json",
+  "outputMimeType": "application/json"
+}
+```
+
+Mime types accept either the media type ("application/json") or the short label
+("JSON", "CSV", "XML", "NDJSON", "DWL", "XLSX", "TEXT", "MULTIPART", "YAML",
+"URLENCODED").
+
+Use a dwscript block whenever the user asks you to write, fix, or change the
+script or payload — do not paste a corrected script as prose and leave them to
+copy it. Answering a question about the script needs no block.
+
+Rules for both block types:
 - Valid JSON only. No comments, no trailing commas. Escape newlines in strings as \\n.
 - Processor types: set-payload, transform, set-variable, logger, choice, for-each,
   try, on-error-continue, on-error-propagate, raise-error, flow-reference.
