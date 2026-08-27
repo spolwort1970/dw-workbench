@@ -136,6 +136,10 @@ export interface FlowCanvasHandle {
   redo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  /** Append flows (used by Max). Goes through the history stack, so Ctrl+Z reverts it. */
+  addFlows: (flows: FlowDef[]) => void;
+  /** Swap the canvas for these flows. Also undoable. */
+  replaceFlows: (flows: FlowDef[]) => void;
 }
 
 interface FlowCanvasProps {
@@ -216,12 +220,41 @@ const FlowCanvas = forwardRef<FlowCanvasHandle, FlowCanvasProps>(function FlowCa
     notifyHistory();
   }, [onChange, notifyHistory]);
 
+  // Names must stay unique — a flow-reference resolves by name, so a duplicate
+  // would silently point at the wrong flow.
+  const uniqueName = useCallback((name: string, taken: Set<string>): string => {
+    if (!taken.has(name)) return name;
+    for (let n = 2; ; n++) {
+      const candidate = `${name}${n}`;
+      if (!taken.has(candidate)) return candidate;
+    }
+  }, []);
+
+  const addFlows = useCallback((incoming: FlowDef[]) => {
+    if (!incoming.length) return;
+    update((prev) => {
+      const taken = new Set(prev.flows.map((f) => f.name));
+      const renamed = incoming.map((f) => {
+        const name = uniqueName(f.name, taken);
+        taken.add(name);
+        return { ...f, name };
+      });
+      return { flows: [...prev.flows, ...renamed] };
+    });
+  }, [update, uniqueName]);
+
+  const replaceFlows = useCallback((incoming: FlowDef[]) => {
+    update(() => ({ flows: incoming }));
+  }, [update]);
+
   useImperativeHandle(ref, () => ({
     undo,
     redo,
     get canUndo() { return history.current.length > 0; },
     get canRedo() { return redoStack.current.length > 0; },
-  }), [undo, redo]);
+    addFlows,
+    replaceFlows,
+  }), [undo, redo, addFlows, replaceFlows]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

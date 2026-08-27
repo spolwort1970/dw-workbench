@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { THEMES, type ThemeOption } from "../monacoThemes";
 import { maxTestConnection } from "../services/api";
-import type { MaxProvider } from "../types/max";
+import { MODEL_FAMILIES, type MaxProvider, type MaxModelFamily } from "../types/max";
 
 export const FONT_SIZES = [
   { label: "Small",  value: 13 },
@@ -24,6 +24,7 @@ export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFon
   const [aiExpanded, setAiExpanded] = useState(false);
   const [apiKey, setApiKey]           = useState(() => localStorage.getItem("dw-max-api-key") ?? "");
   const [provider, setProvider]       = useState<MaxProvider>(() => (localStorage.getItem("dw-max-provider") as MaxProvider) ?? "anthropic");
+  const [modelFamily, setModelFamily] = useState<MaxModelFamily>(() => (localStorage.getItem("dw-max-model-family") as MaxModelFamily) ?? "sonnet");
   const [testStatus, setTestStatus]   = useState<"idle" | "testing" | "ok" | "err">("idle");
   const [testMsg, setTestMsg]         = useState("");
   const ref = useRef<HTMLDivElement>(null);
@@ -149,7 +150,7 @@ export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFon
 
               {provider === "claude-cli" && (
                 <p className="ai-vertex-note">
-                  Uses your Claude Code authentication automatically. No API key required.
+                  Signs in with your Claude account through the Claude Code CLI. No API key required.
                 </p>
               )}
 
@@ -171,6 +172,27 @@ export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFon
                   />
                 </>
               )}
+
+              {/* Model family — the exact model is resolved server-side to the
+                  newest release in the family, so this never needs updating. */}
+              <label className="ai-key-label">Model</label>
+              <div className="ai-provider-toggle">
+                {MODEL_FAMILIES.map((f) => (
+                  <button
+                    key={f.value}
+                    className={`ai-provider-btn ${modelFamily === f.value ? "ai-provider-btn--active" : ""}`}
+                    title={f.hint}
+                    onClick={() => {
+                      setModelFamily(f.value);
+                      localStorage.setItem("dw-max-model-family", f.value);
+                      window.dispatchEvent(new CustomEvent("dw-api-key-changed"));
+                    }}
+                  >{f.label}</button>
+                ))}
+              </div>
+              <p className="ai-vertex-note">
+                {MODEL_FAMILIES.find((f) => f.value === modelFamily)?.hint} — always the latest release.
+              </p>
 
               {/* Test connection */}
               <button

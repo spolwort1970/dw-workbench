@@ -24,13 +24,21 @@ export interface MaxContext {
 
 export type MaxProvider = "anthropic" | "vertex" | "claude-cli";
 
+/** The user picks a family; the backend resolves it to the newest model in it. */
+export type MaxModelFamily = "sonnet" | "opus";
+
+export const MODEL_FAMILIES: { value: MaxModelFamily; label: string; hint: string }[] = [
+  { value: "sonnet", label: "Sonnet", hint: "Fast, great for everyday DataWeave work" },
+  { value: "opus",   label: "Opus",   hint: "Deeper reasoning for hard flows and debugging" },
+];
+
 export interface MaxChatRequest {
   api_key?: string;
   provider?: MaxProvider;
   vertex_region?: string;
   messages: MaxMessage[];
   context?: MaxContext;
-  model?: string;
+  model_family?: MaxModelFamily;
 }
 
 export interface MaxSummarizeRequest {

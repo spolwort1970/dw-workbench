@@ -2,7 +2,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { createWorker } from 'tesseract.js';
 import { streamMaxChat, maxSummarize } from "../services/api";
-import type { MaxMessage, MaxContext, MaxContentPart } from "../types/max";
+import type { MaxMessage, MaxContext, MaxContentPart, MaxModelFamily } from "../types/max";
+import type { FlowDef } from "../types/flow";
+import { extractDwFlowBlocks, stripDwFlowBlocks, type DwFlowBlock } from "../services/flowSpec";
+
+/** Channel used by the popped-out window to send flows back to the canvas. */
+export const MAX_APPLY_CHANNEL = "dw-max-apply";
+
+export interface ApplyFlowsMessage {
+  flows: FlowDef[];
+  mode:  "add" | "replace";
+}
 
 const AUTO_SUMMARY_INTERVAL_MS = 30 * 60 * 1000;
 const DEFAULT_PANEL_HEIGHT = 280;   // docked mode only
@@ -23,9 +33,12 @@ interface Props {
   context?: MaxContext;
   mode?: MaxMode;
   onPopOut?: () => void;   // called when user clicks pop-out button (tab mode)
+  /** Apply flows Max wrote to the canvas. Absent in the popped-out window,
+   *  which has no canvas of its own and posts over MAX_APPLY_CHANNEL instead. */
+  onApplyFlows?: (flows: FlowDef[], mode: "add" | "replace") => void;
 }
 
-export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
+export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows }: Props) {
   // ── Panel sizing (docked only) ──────────────────────────────────
   const [collapsed,   setCollapsed]   = useState(false);
   const [panelHeight, setPanelHeight] = useState(DEFAULT_PANEL_HEIGHT);
@@ -79,6 +92,9 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
   const [apiKey,       setApiKey]       = useState(() => localStorage.getItem("dw-max-api-key") ?? "");
   const [provider,     setProvider]     = useState(() => localStorage.getItem("dw-max-provider") ?? "anthropic");
   const [vertexRegion, setVertexRegion] = useState(() => localStorage.getItem("dw-max-vertex-region") ?? "us-east5");
+  const [modelFamily,  setModelFamily]  = useState<MaxModelFamily>(
+    () => (localStorage.getItem("dw-max-model-family") as MaxModelFamily) ?? "sonnet"
+  );
 
   // ── Refs ────────────────────────────────────────────────────────
   const abortRef           = useRef<AbortController | null>(null);
@@ -96,6 +112,7 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
       setApiKey(localStorage.getItem("dw-max-api-key") ?? "");
       setProvider(localStorage.getItem("dw-max-provider") ?? "anthropic");
       setVertexRegion(localStorage.getItem("dw-max-vertex-region") ?? "us-east5");
+      setModelFamily((localStorage.getItem("dw-max-model-family") as MaxModelFamily) ?? "sonnet");
     };
     window.addEventListener("dw-api-key-changed", handler);
     return () => window.removeEventListener("dw-api-key-changed", handler);
@@ -113,6 +130,17 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
   useEffect(() => {
     if (mode === "standalone") document.title = "Max — DW Workbench";
   }, [mode]);
+
+  /**
+   * Hand flows to the canvas. The popped-out Max lives in its own window with no
+   * canvas in it, so it posts across to the main window instead.
+   */
+  const applyFlows = useCallback((flows: FlowDef[], applyMode: "add" | "replace") => {
+    if (onApplyFlows) { onApplyFlows(flows, applyMode); return; }
+    const ch = new BroadcastChannel(MAX_APPLY_CHANNEL);
+    ch.postMessage({ flows, mode: applyMode } satisfies ApplyFlowsMessage);
+    ch.close();
+  }, [onApplyFlows]);
 
   // Standalone: listen for ghost + snap state from main process
   useEffect(() => {
@@ -318,7 +346,7 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
 
     try {
       await streamMaxChat(
-        { api_key: apiKey, provider: provider as any, vertex_region: vertexRegion, messages: newMessages, context: { ...activeContext, session_summary: sessionSummary || undefined }, model: "claude-sonnet-4-6" },
+        { api_key: apiKey, provider: provider as any, vertex_region: vertexRegion, messages: newMessages, context: { ...activeContext, session_summary: sessionSummary || undefined }, model_family: modelFamily },
         (chunk) => {
           setMessages((prev) => {
             const last = prev[prev.length - 1];
@@ -471,8 +499,18 @@ export default function MaxPanel({ context, mode = "tab", onPopOut }: Props) {
                   {msg.content.map((part, j) => {
                     if (part.type === "image" && part.data)
                       return <img key={j} className="max-image-thumb" src={`data:${part.media_type};base64,${part.data}`} alt="attached" />;
-                    if (msg.role === "assistant")
-                      return <ReactMarkdown key={j}>{part.text ?? ""}</ReactMarkdown>;
+                    if (msg.role === "assistant") {
+                      const text   = part.text ?? "";
+                      const blocks = extractDwFlowBlocks(text);
+                      return (
+                        <div key={j}>
+                          <ReactMarkdown>{blocks.length ? stripDwFlowBlocks(text) : text}</ReactMarkdown>
+                          {blocks.map((b) => (
+                            <FlowApplyCard key={b.index} block={b} onApply={applyFlows} />
+                          ))}
+                        </div>
+                      );
+                    }
                     return <p key={j}>{part.text}</p>;
                   })}
                   {msg.role === "assistant" && streaming && i === messages.length - 1 && <span className="max-cursor" />}
@@ -543,5 +581,78 @@ function PaperclipIcon() {
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
     </svg>
+  );
+}
+
+// ── Flow apply card ───────────────────────────────────────────────────────────
+
+/**
+ * The control that puts a flow Max designed onto the canvas.
+ *
+ * Applying is deliberately a button rather than something that happens as the
+ * message arrives: the canvas is the user's work, and a model that misreads a
+ * request should not be able to overwrite it unprompted. Both actions go through
+ * the canvas history, so Ctrl+Z undoes them.
+ */
+const APPLIED_KEY = "dw-max-applied-flows";
+
+/** Applying switches to the Flow tab, which unmounts Max — so remember on disk. */
+function readApplied(): Record<string, "add" | "replace"> {
+  try { return JSON.parse(localStorage.getItem(APPLIED_KEY) ?? "{}"); }
+  catch { return {}; }
+}
+
+function FlowApplyCard({ block, onApply }: { block: DwFlowBlock; onApply: (flows: FlowDef[], mode: "add" | "replace") => void }) {
+  const [applied, setApplied] = useState<"add" | "replace" | null>(() => readApplied()[block.key] ?? null);
+
+  if (block.parseError) {
+    return (
+      <div className="max-flow-card max-flow-card--bad">
+        <span className="max-flow-card-title">Max sent a flow, but it could not be read</span>
+        <span className="max-flow-card-detail">{block.parseError}</span>
+      </div>
+    );
+  }
+  if (!block.flows.length) {
+    return (
+      <div className="max-flow-card max-flow-card--bad">
+        <span className="max-flow-card-title">Max sent a flow with nothing usable in it</span>
+        {block.errors.slice(0, 4).map((e, i) => <span key={i} className="max-flow-card-detail">{e}</span>)}
+      </div>
+    );
+  }
+
+  const count = block.flows.length;
+  const names = block.flows.map((f) => f.name).join(", ");
+
+  const run = (mode: "add" | "replace") => {
+    onApply(block.flows, mode);
+    setApplied(mode);
+    try { localStorage.setItem(APPLIED_KEY, JSON.stringify({ ...readApplied(), [block.key]: mode })); }
+    catch { /* remembering is a convenience, not worth failing the apply */ }
+  };
+
+  return (
+    <div className="max-flow-card">
+      <span className="max-flow-card-title">
+        {count} flow{count === 1 ? "" : "s"} ready: <strong>{names}</strong>
+      </span>
+      {block.errors.length > 0 && (
+        <span className="max-flow-card-detail">
+          {block.errors.length} part{block.errors.length === 1 ? "" : "s"} skipped — {block.errors[0]}
+        </span>
+      )}
+      {applied ? (
+        <span className="max-flow-card-done">
+          {applied === "add" ? "Added to canvas" : "Canvas replaced"} — Ctrl+Z on the Flow tab to undo
+          <button className="max-flow-btn max-flow-card-again" onClick={() => run(applied)}>Apply again</button>
+        </span>
+      ) : (
+        <div className="max-flow-card-actions">
+          <button className="max-flow-btn max-flow-btn--primary" onClick={() => run("add")}>Add to canvas</button>
+          <button className="max-flow-btn" onClick={() => run("replace")} title="Discard the current flows and use these instead">Replace canvas</button>
+        </div>
+      )}
+    </div>
   );
 }

@@ -158,7 +158,9 @@ function summarizeProcessors(procs: ProcessorInstance[], depth: number, out: str
 function summarizeOneFlow(f: FlowDef, out: string[]): void {
   out.push(`${f.type === "subflow" ? "subflow" : "flow"} "${f.name}"`);
 
-  const src = f.source;
+  // A subflow is invoked by a flow-reference and never has its own inbound
+  // message, so its source config is noise in the prompt.
+  const src = f.type === "subflow" ? null : f.source;
   if (src) {
     const bits = [`mime ${src.mimeType || "?"}`];
     if (src.attributeTemplate && src.attributeTemplate !== "none") bits.push(`${src.attributeTemplate} attributes`);

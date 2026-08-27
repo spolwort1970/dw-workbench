@@ -144,7 +144,9 @@ class MaxChatRequest(BaseModel):
     vertex_region: str = "us-east5"   # only used when provider="vertex"
     messages: list[MaxMessage]
     context: MaxContext = MaxContext()
-    model: str = "claude-sonnet-4-6"
+    # "opus" | "sonnet" — the exact model is resolved server-side to the newest
+    # release in the family, so a new model needs no client change.
+    model_family: str = "sonnet"
 
 
 class MaxSummarizeRequest(BaseModel):

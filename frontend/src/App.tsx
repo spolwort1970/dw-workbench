@@ -9,7 +9,7 @@ import LoadPayloadButton from "./components/LoadPayloadButton";
 import ImportExport, { type WorkspaceState } from "./components/ImportExport";
 import FileMenu from "./components/FileMenu";
 import FlowCanvas, { type FlowCanvasHandle } from "./components/flow/FlowCanvas";
-import MaxPanel from "./components/MaxPanel";
+import MaxPanel, { MAX_APPLY_CHANNEL, type ApplyFlowsMessage } from "./components/MaxPanel";
 import ErrorHintsModal from "./components/ErrorHintsModal";
 import MimeTypeDropdown, { MIME_TYPES, type MimeTypeOption } from "./components/MimeTypeDropdown";
 import { registerThemes, isLightTheme, getThemeBg } from "./monacoThemes";
@@ -25,7 +25,7 @@ import { addRecentProject, setWorkspaceFolder, resolveWorkspaceFolder, clearLega
 import { basename } from "./services/nativeFs";
 import { summarizeFlowState } from "./services/flowSummary";
 import { DEFAULT_PROJECT_NAME, defaultScriptEditor, defaultFlowState, type ScriptEditorState, type FlowState } from "./types/project";
-import type { FlowCanvasState } from "./types/flow";
+import type { FlowCanvasState, FlowDef } from "./types/flow";
 import "./App.css";
 
 const MIN_COL_WIDTH = 300;
@@ -419,6 +419,31 @@ function AppInner() {
     localStorage.setItem("dw-max-context", JSON.stringify(ctx));
     ch.close();
   }, [buildMaxContext]);
+
+  /**
+   * Put flows Max designed onto the canvas and show them.
+   *
+   * FlowCanvas is kept mounted behind display:none, so the ref is live even when
+   * the Flow tab isn't showing — the switch is for the user's benefit, not the
+   * canvas's.
+   */
+  const handleApplyFlows = useCallback((flows: FlowDef[], applyMode: "add" | "replace") => {
+    const canvas = flowCanvasRef.current;
+    if (!canvas || !flows.length) return;
+    if (applyMode === "replace") canvas.replaceFlows(flows);
+    else canvas.addFlows(flows);
+    setActiveTab("flow");
+  }, []);
+
+  // The popped-out Max window has no canvas, so it posts flows back over here.
+  useEffect(() => {
+    const ch = new BroadcastChannel(MAX_APPLY_CHANNEL);
+    ch.onmessage = (e) => {
+      const msg = e.data as ApplyFlowsMessage | undefined;
+      if (msg?.flows?.length) handleApplyFlows(msg.flows, msg.mode === "replace" ? "replace" : "add");
+    };
+    return () => ch.close();
+  }, [handleApplyFlows]);
 
   // Pop-out Max window
   const handleMaxPopOut = useCallback(() => {
@@ -822,6 +847,7 @@ function AppInner() {
           mode="tab"
           context={buildMaxContext()}
           onPopOut={handleMaxPopOut}
+          onApplyFlows={handleApplyFlows}
         />
       )}
 
