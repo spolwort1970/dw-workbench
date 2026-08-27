@@ -306,6 +306,24 @@ def _build_system(req: MaxChatRequest, model_id: str | None = None) -> str:
     return "\n".join(parts)
 
 
+# The system prompt still travels as an argument, so it has to stay well clear of
+# the 32,767-character command-line ceiling on its own. Workspace context (flow
+# summary, script, payload) is user data and can be arbitrarily large.
+_MAX_CLI_SYSTEM_CHARS = 16000
+
+
+def _bounded_system(system: str) -> str:
+    """Trim an oversized system prompt, telling the model what was dropped."""
+    if len(system) <= _MAX_CLI_SYSTEM_CHARS:
+        return system
+    keep = _MAX_CLI_SYSTEM_CHARS - 200
+    return (
+        system[:keep]
+        + "\n\n[Workspace context truncated to fit the CLI command-line limit. "
+          "Ask the user for any detail you need rather than assuming it is absent.]"
+    )
+
+
 def _convert_messages(req: MaxChatRequest) -> list[dict]:
     """Convert MaxMessage list to Anthropic API message format."""
     result = []
@@ -398,10 +416,14 @@ async def _cli_stream_chat(req: MaxChatRequest, model: str) -> AsyncIterator[str
             "or set DW_CLAUDE_CLI to its full path, then restart DW Workbench."
         )
 
+    # The conversation goes in on stdin, never as an argument. Windows caps a whole
+    # command line at 32,767 characters, and the transcript passes that after a few
+    # dozen exchanges — the spawn then fails with WinError 206 and the chat dies
+    # mid-session as "network error", having worked fine all morning.
     cmd = [
         *_cli_command(cli),
-        "-p", prompt_text,
-        "--system-prompt", system,
+        "-p",
+        "--system-prompt", _bounded_system(system),
         "--model", model,
         "--output-format", "stream-json",
         "--verbose",
@@ -411,10 +433,16 @@ async def _cli_stream_chat(req: MaxChatRequest, model: str) -> AsyncIterator[str
 
     proc = await asyncio.create_subprocess_exec(
         *cmd,
+        stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         creationflags=_SUBPROCESS_FLAGS,
     )
+
+    assert proc.stdin is not None
+    proc.stdin.write(prompt_text.encode("utf-8"))
+    await proc.stdin.drain()
+    proc.stdin.close()   # signals end of prompt; the CLI waits for EOF otherwise
 
     assert proc.stdout is not None
 
@@ -460,14 +488,17 @@ async def summarize(req: MaxSummarizeRequest) -> str:
         cli = _find_claude_cli()
         if not cli:
             return ""
+        # Same command-line ceiling as the chat path: the prompt embeds the whole
+        # transcript, so it goes in on stdin rather than as an argument.
         proc = await asyncio.create_subprocess_exec(
-            *_cli_command(cli), "-p", prompt, "--model", "haiku",
+            *_cli_command(cli), "-p", "--model", "haiku",
             *_CLI_BASE_ARGS,
+            stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             creationflags=_SUBPROCESS_FLAGS,
         )
-        stdout, _ = await proc.communicate()
+        stdout, _ = await proc.communicate(prompt.encode("utf-8"))
         return stdout.decode("utf-8", errors="replace").strip()
 
     client, _ = _make_client(req.provider, req.api_key, req.vertex_region)
