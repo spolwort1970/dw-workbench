@@ -4,8 +4,8 @@ import { createWorker } from 'tesseract.js';
 import { streamMaxChat, maxSummarize } from "../services/api";
 import type { MaxMessage, MaxContext, MaxContentPart, MaxModelFamily } from "../types/max";
 import type { FlowDef } from "../types/flow";
-import { extractDwFlowBlocks, stripDwFlowBlocks, type DwFlowBlock } from "../services/flowSpec";
-import { extractDwScriptBlocks, stripDwScriptBlocks, type DwScriptBlock, type ScriptEdit } from "../services/scriptSpec";
+import { extractDwFlowBlocks, stripDwFlowBlocks } from "../services/flowSpec";
+import { extractDwScriptBlocks, stripDwScriptBlocks, type ScriptEdit } from "../services/scriptSpec";
 
 /** Channel used by the popped-out window to send flows back to the canvas. */
 export const MAX_APPLY_CHANNEL = "dw-max-apply";
@@ -100,12 +100,6 @@ export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows
   const [modelFamily,  setModelFamily]  = useState<MaxModelFamily>(
     () => (localStorage.getItem("dw-max-model-family") as MaxModelFamily) ?? "sonnet"
   );
-  // When on, Max's edits land as soon as a reply finishes instead of waiting for
-  // a click. Off by default: a model that misreads a request should not be able
-  // to overwrite the user's work unprompted.
-  const [autoApply, setAutoApply] = useState(
-    () => localStorage.getItem("dw-max-auto-apply") === "true"
-  );
 
   // ── Refs ────────────────────────────────────────────────────────
   const abortRef           = useRef<AbortController | null>(null);
@@ -124,7 +118,6 @@ export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows
       setProvider(localStorage.getItem("dw-max-provider") ?? "anthropic");
       setVertexRegion(localStorage.getItem("dw-max-vertex-region") ?? "us-east5");
       setModelFamily((localStorage.getItem("dw-max-model-family") as MaxModelFamily) ?? "sonnet");
-      setAutoApply(localStorage.getItem("dw-max-auto-apply") === "true");
     };
     window.addEventListener("dw-api-key-changed", handler);
     return () => window.removeEventListener("dw-api-key-changed", handler);
@@ -153,10 +146,6 @@ export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows
     ch.postMessage({ flows, mode: applyMode } satisfies ApplyFlowsMessage);
     ch.close();
   }, [onApplyFlows]);
-
-  // Read inside the send() closure, which captures state from before the reply.
-  const autoApplyRef = useRef(autoApply);
-  useEffect(() => { autoApplyRef.current = autoApply; }, [autoApply]);
 
   const applyScript = useCallback((edit: ScriptEdit) => {
     if (onApplyScript) { onApplyScript(edit); return; }
@@ -425,10 +414,10 @@ export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows
       setStreaming(false);
       abortRef.current = null;
       sendingRef.current = false;
-      // Auto-apply runs here rather than mid-stream: a block is only complete
-      // once the reply is, and applying a half-written one would put a partial
-      // flow on the canvas and then have to undo it.
-      if (autoApplyRef.current) applyPendingBlocks();
+      // Applied here rather than mid-stream: a block is only complete once the
+      // reply is, and applying a half-written one would put a partial flow on the
+      // canvas and then have to undo it.
+      applyPendingBlocks();
     }
   }, [input, pendingImages, messages, apiKey, activeContext, sessionSummary, provider, vertexRegion, isReady, applyPendingBlocks]);
 
@@ -564,14 +553,18 @@ export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows
                       const flows   = extractDwFlowBlocks(text);
                       const scripts = extractDwScriptBlocks(text);
                       const prose   = stripDwScriptBlocks(stripDwFlowBlocks(text));
+                      // Edits are applied straight to the workspace, so the blocks
+                      // never render — only a failure is worth showing, because a
+                      // silent no-op reads as "Max did it" when it didn't.
+                      const failures = [
+                        ...flows.map((b) => b.parseError ?? (b.flows.length ? null : b.errors[0])),
+                        ...scripts.map((b) => b.parseError ?? (b.changes.length ? null : b.errors[0])),
+                      ].filter(Boolean) as string[];
                       return (
                         <div key={j}>
                           <ReactMarkdown>{flows.length || scripts.length ? prose : text}</ReactMarkdown>
-                          {flows.map((b) => (
-                            <FlowApplyCard key={`f${b.index}`} block={b} onApply={applyFlows} autoApplied={autoApply} />
-                          ))}
-                          {scripts.map((b) => (
-                            <ScriptApplyCard key={`s${b.index}`} block={b} onApply={applyScript} autoApplied={autoApply} />
+                          {failures.map((f, k) => (
+                            <div key={k} className="max-edit-failed">Could not apply that edit — {f}</div>
                           ))}
                         </div>
                       );
@@ -661,127 +654,13 @@ function PaperclipIcon() {
  */
 const APPLIED_KEY = "dw-max-applied-flows";
 
-/** Applying switches to the Flow tab, which unmounts Max — so remember on disk. */
+/**
+ * Record of blocks already applied, keyed by content hash.
+ *
+ * Survives remounts and reloads so a re-render of the same reply never re-applies
+ * an edit — which would silently duplicate a flow on the canvas.
+ */
 function readApplied(): Record<string, "add" | "replace"> {
   try { return JSON.parse(localStorage.getItem(APPLIED_KEY) ?? "{}"); }
   catch { return {}; }
-}
-
-function FlowApplyCard({ block, onApply, autoApplied }: { block: DwFlowBlock; onApply: (flows: FlowDef[], mode: "add" | "replace") => void; autoApplied?: boolean }) {
-  const [applied, setApplied] = useState<"add" | "replace" | null>(() => readApplied()[block.key] ?? null);
-  // Auto-apply writes the same key, so re-check once the store settles.
-  useEffect(() => {
-    if (autoApplied && !applied) setApplied(readApplied()[block.key] ?? null);
-  }, [autoApplied, applied, block.key]);
-
-  if (block.parseError) {
-    return (
-      <div className="max-flow-card max-flow-card--bad">
-        <span className="max-flow-card-title">Max sent a flow, but it could not be read</span>
-        <span className="max-flow-card-detail">{block.parseError}</span>
-      </div>
-    );
-  }
-  if (!block.flows.length) {
-    return (
-      <div className="max-flow-card max-flow-card--bad">
-        <span className="max-flow-card-title">Max sent a flow with nothing usable in it</span>
-        {block.errors.slice(0, 4).map((e, i) => <span key={i} className="max-flow-card-detail">{e}</span>)}
-      </div>
-    );
-  }
-
-  const count = block.flows.length;
-  const names = block.flows.map((f) => f.name).join(", ");
-
-  const run = (mode: "add" | "replace") => {
-    onApply(block.flows, mode);
-    setApplied(mode);
-    try { localStorage.setItem(APPLIED_KEY, JSON.stringify({ ...readApplied(), [block.key]: mode })); }
-    catch { /* remembering is a convenience, not worth failing the apply */ }
-  };
-
-  return (
-    <div className="max-flow-card">
-      <span className="max-flow-card-title">
-        {count} flow{count === 1 ? "" : "s"} ready: <strong>{names}</strong>
-      </span>
-      {block.errors.length > 0 && (
-        <span className="max-flow-card-detail">
-          {block.errors.length} part{block.errors.length === 1 ? "" : "s"} skipped — {block.errors[0]}
-        </span>
-      )}
-      {applied ? (
-        <span className="max-flow-card-done">
-          {applied === "add" ? "Added to canvas" : "Canvas replaced"} — Ctrl+Z on the Flow tab to undo
-          <button className="max-flow-btn max-flow-card-again" onClick={() => run(applied)}>Apply again</button>
-        </span>
-      ) : (
-        <div className="max-flow-card-actions">
-          <button className="max-flow-btn max-flow-btn--primary" onClick={() => run("add")}>Add to canvas</button>
-          <button className="max-flow-btn" onClick={() => run("replace")} title="Discard the current flows and use these instead">Replace canvas</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-
-/**
- * The control that applies a Script Console edit Max wrote.
- *
- * Same contract as FlowApplyCard: nothing changes until the user presses it
- * (unless auto-apply is on), and it names exactly which fields will change so a
- * payload-only edit can't be mistaken for a rewrite of the script.
- */
-function ScriptApplyCard({ block, onApply, autoApplied }: { block: DwScriptBlock; onApply: (edit: ScriptEdit) => void; autoApplied?: boolean }) {
-  const [applied, setApplied] = useState<boolean>(() => !!readApplied()[block.key]);
-  useEffect(() => {
-    if (autoApplied && !applied) setApplied(!!readApplied()[block.key]);
-  }, [autoApplied, applied, block.key]);
-
-  if (block.parseError) {
-    return (
-      <div className="max-flow-card max-flow-card--bad">
-        <span className="max-flow-card-title">Max sent a script edit, but it could not be read</span>
-        <span className="max-flow-card-detail">{block.parseError}</span>
-      </div>
-    );
-  }
-  if (!block.changes.length) {
-    return (
-      <div className="max-flow-card max-flow-card--bad">
-        <span className="max-flow-card-title">Max sent a script edit with nothing to apply</span>
-        {block.errors.slice(0, 3).map((e, i) => <span key={i} className="max-flow-card-detail">{e}</span>)}
-      </div>
-    );
-  }
-
-  const run = () => {
-    onApply(block.edit);
-    setApplied(true);
-    try { localStorage.setItem(APPLIED_KEY, JSON.stringify({ ...readApplied(), [block.key]: "add" })); }
-    catch { /* remembering is a convenience, not worth failing the apply */ }
-  };
-
-  return (
-    <div className="max-flow-card">
-      <span className="max-flow-card-title">
-        Script Console edit: <strong>{block.changes.join(", ")}</strong>
-      </span>
-      {block.errors.length > 0 && (
-        <span className="max-flow-card-detail">{block.errors[0]}</span>
-      )}
-      {applied ? (
-        <span className="max-flow-card-done">
-          Applied to the Script Console
-          <button className="max-flow-btn max-flow-card-again" onClick={run}>Apply again</button>
-        </span>
-      ) : (
-        <div className="max-flow-card-actions">
-          <button className="max-flow-btn max-flow-btn--primary" onClick={run}>Apply to Script Console</button>
-        </div>
-      )}
-    </div>
-  );
 }

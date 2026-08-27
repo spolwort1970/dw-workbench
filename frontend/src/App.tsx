@@ -433,7 +433,6 @@ function AppInner() {
     if (!canvas || !flows.length) return;
     if (applyMode === "replace") canvas.replaceFlows(flows);
     else canvas.addFlows(flows);
-    setActiveTab("flow");
   }, []);
 
   /**
@@ -452,7 +451,6 @@ function AppInner() {
       const m = MIME_TYPES.find((x) => x.value === edit.outputMimeType);
       if (m) setOutputMimeType(m);
     }
-    setActiveTab("script");
   }, []);
 
   // The popped-out Max window has no canvas or editor, so it posts edits back here.
