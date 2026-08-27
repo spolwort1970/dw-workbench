@@ -23,6 +23,7 @@ import {
 } from "./services/projectService";
 import { addRecentProject, setWorkspaceFolder, resolveWorkspaceFolder, clearLegacyHandleStore } from "./services/recentProjectsService";
 import { basename } from "./services/nativeFs";
+import { summarizeFlowState } from "./services/flowSummary";
 import { DEFAULT_PROJECT_NAME, defaultScriptEditor, defaultFlowState, type ScriptEditorState, type FlowState } from "./types/project";
 import type { FlowCanvasState } from "./types/flow";
 import "./App.css";
@@ -394,24 +395,30 @@ function AppInner() {
     addRecentProject({ name: loaded.meta.name, modified: loaded.meta.modified, path: handle });
   }, [isDirty, restoreEditorState]);
 
+  /**
+   * Everything Max is told about the workspace.
+   *
+   * The flow canvas has to be summarized here rather than passed raw — the backend
+   * inlines `flow_summary` straight into the prompt. Leaving it out was why Max
+   * could only ever discuss the Script Console.
+   */
+  const buildMaxContext = useCallback(() => ({
+    script,
+    payload: payloadText,
+    output: result?.success ? String(result.output ?? "") : undefined,
+    error: result?.error || fetchError || undefined,
+    flow_summary: summarizeFlowState(flowStateRef.current as unknown as FlowCanvasState),
+    project_name: projectName,
+  }), [script, payloadText, result, fetchError, projectName, flowVersion]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Broadcast context to Max standalone window
   useEffect(() => {
+    const ctx = buildMaxContext();
     const ch = new BroadcastChannel("dw-max-context");
-    ch.postMessage({
-      script,
-      payload: payloadText,
-      output: result?.success ? String(result.output ?? "") : undefined,
-      error: result?.error || fetchError || undefined,
-      project_name: projectName,
-    });
-    localStorage.setItem("dw-max-context", JSON.stringify({
-      script, payload: payloadText,
-      output: result?.success ? String(result.output ?? "") : undefined,
-      error: result?.error || fetchError || undefined,
-      project_name: projectName,
-    }));
+    ch.postMessage(ctx);
+    localStorage.setItem("dw-max-context", JSON.stringify(ctx));
     ch.close();
-  }, [script, payloadText, result, fetchError, projectName]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [buildMaxContext]);
 
   // Pop-out Max window
   const handleMaxPopOut = useCallback(() => {
@@ -813,13 +820,7 @@ function AppInner() {
       {activeTab === "max" && !maxDetached && (
         <MaxPanel
           mode="tab"
-          context={{
-            script,
-            payload: payloadText,
-            output: result?.success ? String(result.output ?? "") : undefined,
-            error: result?.error || fetchError || undefined,
-            project_name: projectName,
-          }}
+          context={buildMaxContext()}
           onPopOut={handleMaxPopOut}
         />
       )}
