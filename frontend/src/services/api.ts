@@ -192,12 +192,13 @@ export async function secureProperties(req: SecurePropsRequest): Promise<SecureP
 
 export interface SecurePropsEnvs {
   environments: string[];
-  error: string;
+  sample_env: string;   // the built-in sample environment's name
+  error: string;        // config or JAR problem, if any
 }
 
 export async function getSecurePropsEnvs(): Promise<SecurePropsEnvs> {
   const res = await fetch(`${BASE_URL}/secure-properties/envs`);
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
   const data = await res.json();
-  return { environments: data.environments ?? [], error: data.error ?? "" };
+  return { environments: data.environments ?? [], sample_env: data.sample_env ?? "", error: data.error ?? "" };
 }

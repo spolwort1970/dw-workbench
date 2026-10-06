@@ -175,7 +175,7 @@ class MaxTestResponse(BaseModel):
 class SecurePropsRequest(BaseModel):
     operation: str            # "encrypt" | "decrypt"
     environment: str          # names the key to use (resolved server-side)
-    algorithm: str = "AES"    # AES | Blowfish | DES | DESede | RC2 | RCA
+    algorithm: str = "AES"    # AES | Blowfish | DES | DESede | RC2
     mode: str = "CBC"         # CBC | CFB | ECB | OFB
     use_random_iv: bool = True
     value: str
@@ -189,4 +189,5 @@ class SecurePropsResponse(BaseModel):
 
 class SecurePropsEnvsResponse(BaseModel):
     environments: list[str] = []
+    sample_env: str = ""      # name of the built-in sample environment
     error: str = ""

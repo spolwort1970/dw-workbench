@@ -9,7 +9,7 @@ A local DataWeave workbench with a Mule-style flow simulator. Designed for reaso
 - **Script Console** — run DataWeave scripts locally against a payload using the DW CLI. Three-panel layout: payload | script | output.
 - **Flow Analyzer** — visual left-to-right flow canvas modeled after Anypoint Studio. Drag, configure, and execute Mule-style processor flows. Inspect per-node input/output state. Step through flows in debug mode.
 - **Notes** — markdown scratchpad per project.
-- **Secure Properties** — encrypt/decrypt MuleSoft secure config values locally (AES/Blowfish/DES/DESede/RC2/RCA; CBC/CFB/ECB/OFB; optional random IV). Per-environment keys live in a local, gitignored config — never committed.
+- **Secure Properties** — encrypt/decrypt MuleSoft secure config values locally (AES/Blowfish/DES/DESede/RC2; CBC/CFB/ECB/OFB; optional random IV). Per-environment keys live in a local, gitignored config — never committed.
 
 ## What It Is Not
 
@@ -84,18 +84,22 @@ The DW CLI must be installed and available on `PATH` as `dw`. Download from [Mul
 
 ### Secure Properties config (first-time setup)
 
-The **Secure Properties** tab shells out to the MuleSoft Secure Properties Tool JAR using per-environment keys. Keys are **never committed and never bundled into the build** — every person who uses the tab sets it up once on their own machine:
+The **Secure Properties** tab shells out to the MuleSoft Secure Properties Tool JAR. It needs **Java 17+** and the **JAR**; your own keys are optional.
+
+**Try it right away.** A built-in **Sample (test key)** environment is always in the environment list, so once Java and the JAR are in place you can encrypt and decrypt with no config at all. The sample key ships with the app and is public — anyone can decrypt values made with it — so use it only to try the tool, **never for real secrets**.
 
 1. **Install Java 17+** and make sure `java` is on your `PATH`. On Windows: `winget install EclipseAdoptium.Temurin.17.JDK`, then open a new terminal and check `java -version`. (Anypoint Studio ships its own JDK, but it usually isn't on `PATH`.)
-2. **Download the Secure Properties Tool JAR** (Java 17 build, `secure-properties-tool-j17.jar`) from the MuleSoft *Secure Configuration Properties* docs page. Save it anywhere, e.g. `C:\Mule_Secure_Props\`.
-3. **Create your config** by copying `backend/secure_props_config.example.json` to `secure_props_config.json` in the location below. Fill in your per-environment keys and set `jar_path` to where you saved the JAR (forward slashes or doubled backslashes — it's JSON). Remove any environments you don't use.
+2. **Download the Secure Properties Tool JAR** (Java 17 build, `secure-properties-tool-j17.jar`) from the MuleSoft *Secure Configuration Properties* docs page and save it to **`C:\Tools\`** (or `C:\Mule_Secure_Props\`). The app finds it there automatically; anywhere else, set `jar_path` in your config. If the JAR can't be found, the tab says so.
+3. **Optional — add your own keys.** Copy `backend/secure_props_config.example.json` to `secure_props_config.json` in the location below and fill in your per-environment keys (remove any environments you don't use). `jar_path` is optional; use forward slashes or doubled backslashes, since it's JSON. Your environments are listed before the sample one.
 
 | Running | Config location |
 |---|---|
 | Packaged app | `%APPDATA%\dw-workbench\secure_props_config.json` |
 | Dev mode | `backend/secure_props_config.json` (gitignored) |
 
-Restart the app after creating or editing the config. The environment picker lists whatever environments the config defines; if it's empty, the config is missing or in the wrong folder.
+Restart the app after creating or editing the config.
+
+**Key lengths:** AES needs a 16-, 24-, or 32-character key, DES exactly 8, and DESede 24. Blowfish and RC2 accept a range of lengths. (The sample environment uses a key of the right length for each algorithm.)
 
 The frontend only ever receives environment *names* — key values stay server-side and never touch the repo or the build. In the packaged app, Electron points the backend at the app-data config via `SECURE_PROPS_CONFIG`.
 
@@ -216,11 +220,12 @@ If sign-in fails, the bar shows why and the button stays so you can retry. If th
 
 ### Secure Properties
 - Encrypt or decrypt individual MuleSoft secure config values (string mode)
-- Algorithms: AES, Blowfish, DES, DESede, RC2, RCA
+- Algorithms: AES, Blowfish, DES, DESede, RC2
 - Modes: CBC, CFB, ECB, OFB (random-IV toggle; auto-disabled for ECB)
 - Environment picker — the matching key is resolved server-side; the UI never sees key values
 - Encrypt output is wrapped in the `![...]` marker ready for YAML/properties; decrypt accepts values with or without the brackets
 - Runs the MuleSoft Secure Properties Tool JAR locally (requires `java` on `PATH`); keys read from a local gitignored config (see setup above)
+- Built-in **Sample (test key)** environment for trying the tool with no config (public key — never for real secrets)
 
 ---
 

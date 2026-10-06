@@ -3,7 +3,7 @@ import { secureProperties, getSecurePropsEnvs, type SecurePropsResponse } from "
 import CopyButton from "./CopyButton";
 import "./SecurePropertiesPanel.css";
 
-const ALGORITHMS = ["AES", "Blowfish", "DES", "DESede", "RC2", "RCA"];
+const ALGORITHMS = ["AES", "Blowfish", "DES", "DESede", "RC2"];
 const MODES = ["CBC", "CFB", "ECB", "OFB"];
 
 type Operation = "encrypt" | "decrypt";
@@ -19,13 +19,16 @@ export default function SecurePropertiesPanel() {
   const [result, setResult] = useState<SecurePropsResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [setupProblem, setSetupProblem] = useState("");
+  const [sampleEnv, setSampleEnv] = useState("");
 
   useEffect(() => {
     getSecurePropsEnvs()
-      .then(({ environments, error }) => {
+      .then(({ environments, sample_env, error }) => {
         setEnvs(environments);
-        if (error) setLoadError(error);
-        else if (environments.length) setEnvironment(environments[0]);
+        setSampleEnv(sample_env);
+        setSetupProblem(error);
+        if (environments.length) setEnvironment(environments[0]);
       })
       .catch((e) => setLoadError(e instanceof Error ? e.message : String(e)));
   }, []);
@@ -54,7 +57,7 @@ export default function SecurePropertiesPanel() {
     }
   }, [operation, environment, algorithm, mode, effectiveRandomIv, value]);
 
-  const noEnvs = !loadError && envs.length === 0;
+  const usingSample = !!sampleEnv && environment === sampleEnv;
   const canRun = !busy && !!environment && value.trim().length > 0;
 
   return (
@@ -72,10 +75,12 @@ export default function SecurePropertiesPanel() {
               Couldn't reach the backend to load environments: {loadError}
             </div>
           )}
-          {noEnvs && (
-            <div className="sp-banner">
-              No environments configured. Copy <code>secure_props_config.example.json</code> to{" "}
-              <code>secure_props_config.json</code> in the backend folder and add your per-environment keys.
+          {setupProblem && <div className="sp-banner">{setupProblem}</div>}
+          {usingSample && (
+            <div className="sp-banner sp-banner--info">
+              <strong>Sample key — for trying the tool only.</strong> This key ships with DW Workbench and is
+              public, so anyone can decrypt values made with it. Never use it for real secrets. Add your own
+              per-environment keys in <code>%APPDATA%\dw-workbench\secure_props_config.json</code>.
             </div>
           )}
 

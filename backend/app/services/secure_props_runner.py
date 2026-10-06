@@ -8,8 +8,28 @@ from pathlib import Path
 ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*m")
 
 # Allowed values — mirror the MuleSoft Secure Properties Tool.
-ALGORITHMS = {"AES", "Blowfish", "DES", "DESede", "RC2", "RCA"}
+ALGORITHMS = {"AES", "Blowfish", "DES", "DESede", "RC2"}
+
+# Key lengths the JAR accepts, for turning its bare "Wrong key size" into a hint.
+KEY_SIZE_HINTS = {
+    "AES": "16, 24, or 32 characters",
+    "DES": "8 characters",
+    "DESede": "24 characters",
+}
 MODES = {"CBC", "CFB", "ECB", "OFB"}
+
+# Built-in environment so the tab works with no config at all. Its key ships in
+# this (public) repo, so anything encrypted with it is readable by anyone — it is
+# for trying the tool, never for real secrets.
+SAMPLE_ENV = "Sample (test key)"
+SAMPLE_KEY = "DWWorkbenchTest1"            # 16 chars: AES, Blowfish, RC2
+SAMPLE_KEYS_BY_ALGORITHM = {
+    "DES": "DWWBTest",                      # DES needs exactly 8
+    "DESede": "DWWorkbenchSampleKey2026",   # DESede needs 24
+}
+
+# Checked when neither SECURE_PROPS_JAR nor the config's jar_path is set.
+JAR_SEARCH_DIRS = [Path("C:/Tools"), Path("C:/Mule_Secure_Props")]
 
 
 def _config_path() -> Path:
@@ -36,30 +56,53 @@ def load_config() -> dict:
         return {"_error": f"Config file is not valid JSON: {e}"}
 
 
-def _jar_path(cfg: dict) -> str:
-    return (
-        os.environ.get("SECURE_PROPS_JAR")
-        or cfg.get("jar_path")
-        or "secure-properties-tool.jar"
-    )
+def _jar_path(cfg: dict) -> str | None:
+    """The configured JAR, else the first secure-properties-tool*.jar in a known folder."""
+    explicit = os.environ.get("SECURE_PROPS_JAR") or cfg.get("jar_path")
+    if explicit:
+        return explicit
+    for folder in JAR_SEARCH_DIRS:
+        try:
+            found = sorted(folder.glob("secure-properties-tool*.jar"))
+        except OSError:
+            continue
+        if found:
+            return str(found[-1])
+    return None
 
 
-def _env_names(cfg: dict) -> list[str]:
-    """Environment names, ignoring any `_`-prefixed keys (e.g. `_comment`)."""
-    return [k for k in cfg.get("keys", {}).keys() if not k.startswith("_")]
+def _jar_problem(cfg: dict) -> str:
+    """Why the JAR can't be used, or "" if it looks fine."""
+    jar = _jar_path(cfg)
+    if not jar:
+        dirs = " or ".join(str(d) for d in JAR_SEARCH_DIRS)
+        return (
+            f"MuleSoft Secure Properties JAR not found. Put secure-properties-tool-j17.jar in {dirs}, "
+            "or set jar_path in secure_props_config.json."
+        )
+    if not Path(jar).exists():
+        return f"MuleSoft Secure Properties JAR not found at {jar}. Check jar_path in secure_props_config.json."
+    return ""
+
+
+def _keys(cfg: dict) -> dict:
+    """Configured keys plus the built-in sample, ignoring `_`-prefixed entries (e.g. `_comment`)."""
+    keys = {k: v for k, v in cfg.get("keys", {}).items() if not k.startswith("_")}
+    keys.setdefault(SAMPLE_ENV, SAMPLE_KEY)
+    return keys
 
 
 def list_environments() -> list[str]:
     """Return just the environment names — never the key values."""
-    return _env_names(load_config())
+    return list(_keys(load_config()))
 
 
 def environments_payload() -> dict:
-    """Environment names plus any config-loading error (e.g. bad JSON)."""
+    """Environment names, plus any problem with the config or the JAR."""
     cfg = load_config()
     if cfg.get("_error"):
-        return {"environments": [], "error": cfg["_error"]}
-    return {"environments": _env_names(cfg), "error": ""}
+        return {"environments": [SAMPLE_ENV], "sample_env": SAMPLE_ENV, "error": cfg["_error"]}
+    return {"environments": list(_keys(cfg)), "sample_env": SAMPLE_ENV, "error": _jar_problem(cfg)}
 
 
 def run_secure_props(
@@ -82,18 +125,9 @@ def run_secure_props(
     if cfg.get("_error"):
         return {"success": False, "output": "", "error": cfg["_error"]}
 
-    keys = cfg.get("keys", {})
-    if not keys:
-        return {
-            "success": False,
-            "output": "",
-            "error": (
-                "No keys configured. Create a local secure_props_config.json "
-                "(copy secure_props_config.example.json) with your per-environment keys."
-            ),
-        }
-
-    key = keys.get(environment)
+    key = _keys(cfg).get(environment)
+    if environment == SAMPLE_ENV and environment not in cfg.get("keys", {}):
+        key = SAMPLE_KEYS_BY_ALGORITHM.get(algorithm, SAMPLE_KEY)
     if not key:
         return {"success": False, "output": "", "error": f"No key configured for environment '{environment}'."}
 
@@ -105,6 +139,9 @@ def run_secure_props(
     if operation == "decrypt" and value.startswith("![") and value.endswith("]"):
         value = value[2:-1]
 
+    jar_problem = _jar_problem(cfg)
+    if jar_problem:
+        return {"success": False, "output": "", "error": jar_problem}
     jar = _jar_path(cfg)
 
     cmd = [
@@ -141,7 +178,11 @@ def run_secure_props(
     stderr = clean(result.stderr)
 
     if result.returncode != 0 or not stdout:
-        return {"success": False, "output": "", "error": stderr or f"Exit code {result.returncode}"}
+        error = stderr or stdout or f"Exit code {result.returncode}"
+        lowered = error.lower()
+        if ("wrong key size" in lowered or "key length" in lowered) and algorithm in KEY_SIZE_HINTS:
+            error = f"Wrong key size: {algorithm} needs a key of {KEY_SIZE_HINTS[algorithm]}."
+        return {"success": False, "output": "", "error": error}
 
     # On encrypt, wrap in the ![ ... ] marker, ready to drop into YAML/properties.
     output = f"![{stdout}]" if operation == "encrypt" else stdout
