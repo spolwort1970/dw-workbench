@@ -5,8 +5,8 @@ name: Release
 #   Leave the version box empty and it picks the next one for you.
 #
 # What it does: builds the Windows app, stamps the version into the exe and the
-# About dialog, tags the commit, and publishes a GitHub Release with the zipped
-# app attached. Share https://github.com/spolwort1970/dw-workbench/releases/latest
+# About dialog, and publishes a GitHub Release (which tags the commit) with the
+# zipped app attached. If a run fails, just run it again. Share https://github.com/spolwort1970/dw-workbench/releases/latest
 # — it always points at the newest release.
 #
 # Pushing a v* tag by hand also works, if you ever prefer that.
@@ -56,12 +56,24 @@ jobs:
         echo "tag=v${VERSION}"    >> "$GITHUB_OUTPUT"
         echo "Releasing v${VERSION}"
 
-    - name: Stop if the tag already exists
+    - name: Stop if this version is already released
       if: github.ref_type != 'tag'
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        if git rev-parse "${{ steps.ver.outputs.tag }}" >/dev/null 2>&1; then
-          echo "Tag ${{ steps.ver.outputs.tag }} already exists — stopping so nothing is overwritten."
+        TAG="${{ steps.ver.outputs.tag }}"
+        if gh release view "$TAG" >/dev/null 2>&1; then
+          echo "Release $TAG already exists — stopping so nothing is overwritten."
           exit 1
+        fi
+        # A tag with no release is left over from a failed run. Reuse it only if it
+        # marks this same commit; otherwise stop rather than release the wrong code.
+        if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+          if [ "$(git rev-list -n 1 "$TAG")" != "$GITHUB_SHA" ]; then
+            echo "Tag $TAG already exists on a different commit — pick another version."
+            exit 1
+          fi
+          echo "Reusing tag $TAG from an earlier failed run (same commit)."
         fi
 
     - name: Setup Node.js
@@ -110,14 +122,6 @@ jobs:
         Compress-Archive -Path 'electron/dist/DW Workbench-win32-x64' `
           -DestinationPath 'DW-Workbench-${{ steps.ver.outputs.tag }}-win32-x64.zip' -Force
 
-    - name: Tag the commit
-      if: github.ref_type != 'tag'
-      run: |
-        git config user.name  "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-        git tag -a "${{ steps.ver.outputs.tag }}" -m "Release ${{ steps.ver.outputs.tag }}"
-        git push origin "${{ steps.ver.outputs.tag }}"
-
     - name: Create the GitHub Release
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -133,8 +137,21 @@ jobs:
 
         Optional extras: Max (the AI assistant) needs the Claude Code CLI or an Anthropic API key; the Secure Properties tab needs Java 17+ and the MuleSoft Secure Properties JAR. See the [README](https://github.com/spolwort1970/dw-workbench#readme) for setup.
         NOTES
-        gh release create "${{ steps.ver.outputs.tag }}" \
-          --title "DW Workbench ${{ steps.ver.outputs.tag }}" \
-          --notes-file release-notes.md \
-          --generate-notes \
-          "DW-Workbench-${{ steps.ver.outputs.tag }}-win32-x64.zip"
+        # gh creates the tag on this commit as part of the release, so a failed run
+        # never leaves a tag behind. GitHub's API occasionally answers 5xx, so retry.
+        TAG="${{ steps.ver.outputs.tag }}"
+        ZIP="DW-Workbench-${TAG}-win32-x64.zip"
+        for attempt in 1 2 3 4; do
+          gh release delete "$TAG" --yes >/dev/null 2>&1 || true   # drop a half-made draft; keeps the tag
+          if gh release create "$TAG" "$ZIP" \
+               --target "$GITHUB_SHA" \
+               --title "DW Workbench ${TAG}" \
+               --notes-file release-notes.md \
+               --generate-notes; then
+            exit 0
+          fi
+          echo "Attempt $attempt failed; retrying in $((attempt * 20))s…"
+          sleep $((attempt * 20))
+        done
+        echo "Could not create the release after 4 attempts."
+        exit 1
