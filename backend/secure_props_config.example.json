@@ -1,0 +1,10 @@
+{
+  "_comment": "Copy this file to 'secure_props_config.json' (same folder) and fill in real values. The real file is gitignored and never committed. In the packaged app, Electron points SECURE_PROPS_CONFIG at a copy in the user's app-data folder instead.",
+  "jar_path": "C:\\Mule_Secure_Props\\secure-properties-tool-j17.jar",
+  "keys": {
+    "Dev": "REPLACE_WITH_DEV_KEY",
+    "Test": "REPLACE_WITH_TEST_KEY",
+    "Stage": "REPLACE_WITH_STAGE_KEY",
+    "Prod": "REPLACE_WITH_PROD_KEY"
+  }
+}

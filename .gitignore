@@ -29,3 +29,7 @@ Thumbs.db
 
 # Claude Code
 .claude/
+
+# Secure properties — local keys config (never commit real keys)
+backend/secure_props_config.json
+secure_props_config.json

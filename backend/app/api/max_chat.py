@@ -6,7 +6,7 @@ from app.models.schemas import (
     MaxChatRequest, MaxSummarizeRequest, MaxSummarizeResponse,
     MaxTestRequest, MaxTestResponse,
 )
-from app.services.max_runner import stream_chat, summarize, test_connection
+from app.services.max_runner import stream_chat, summarize, test_connection, cli_login
 
 router = APIRouter(prefix="/max", tags=["max"])
 
@@ -38,5 +38,12 @@ async def max_summarize(req: MaxSummarizeRequest) -> MaxSummarizeResponse:
 
 @router.post("/test-connection", response_model=MaxTestResponse)
 async def max_test_connection(req: MaxTestRequest) -> MaxTestResponse:
-    success, error, project_id = await test_connection(req.provider, req.api_key, req.vertex_region)
+    success, error, project_id = await test_connection(req.provider, req.api_key)
     return MaxTestResponse(success=success, error=error, project_id=project_id)
+
+
+@router.post("/cli-login", response_model=MaxTestResponse)
+async def max_cli_login() -> MaxTestResponse:
+    """Sign the Claude Code CLI back in (opens the browser) without leaving the app."""
+    success, error = await cli_login()
+    return MaxTestResponse(success=success, error=error)

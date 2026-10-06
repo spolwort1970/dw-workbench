@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { createWorker } from 'tesseract.js';
-import { streamMaxChat, maxSummarize } from "../services/api";
-import type { MaxMessage, MaxContext, MaxContentPart, MaxModelFamily } from "../types/max";
+import { streamMaxChat, maxSummarize, maxCliLogin } from "../services/api";
+import { readProvider, type MaxMessage, type MaxContext, type MaxContentPart, type MaxModelFamily, type MaxProvider } from "../types/max";
 import type { FlowDef } from "../types/flow";
 import { extractDwFlowBlocks, stripDwFlowBlocks } from "../services/flowSpec";
 import { extractDwScriptBlocks, stripDwScriptBlocks, type ScriptEdit } from "../services/scriptSpec";
@@ -74,6 +74,9 @@ export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows
   });
   const [input,          setInput]          = useState("");
   const [streaming,      setStreaming]      = useState(false);
+  // Claude Code sign-in: "needed" after an auth error, then "working" → "done" | "failed".
+  const [cliAuth,        setCliAuth]        = useState<"ok" | "needed" | "working" | "done" | "failed">("ok");
+  const [cliAuthError,   setCliAuthError]   = useState("");
   const [pendingImages,  setPendingImages]  = useState<PendingImage[]>([]);
 
   // ── Ghost overlay state (standalone only) ─────────────────────
@@ -95,8 +98,7 @@ export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows
 
   // ── API key / provider ─────────────────────────────────────────
   const [apiKey,       setApiKey]       = useState(() => localStorage.getItem("dw-max-api-key") ?? "");
-  const [provider,     setProvider]     = useState(() => localStorage.getItem("dw-max-provider") ?? "anthropic");
-  const [vertexRegion, setVertexRegion] = useState(() => localStorage.getItem("dw-max-vertex-region") ?? "us-east5");
+  const [provider,     setProvider]     = useState<MaxProvider>(readProvider);
   const [modelFamily,  setModelFamily]  = useState<MaxModelFamily>(
     () => (localStorage.getItem("dw-max-model-family") as MaxModelFamily) ?? "sonnet"
   );
@@ -115,8 +117,7 @@ export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows
   useEffect(() => {
     const handler = () => {
       setApiKey(localStorage.getItem("dw-max-api-key") ?? "");
-      setProvider(localStorage.getItem("dw-max-provider") ?? "anthropic");
-      setVertexRegion(localStorage.getItem("dw-max-vertex-region") ?? "us-east5");
+      setProvider(readProvider());
       setModelFamily((localStorage.getItem("dw-max-model-family") as MaxModelFamily) ?? "sonnet");
     };
     window.addEventListener("dw-api-key-changed", handler);
@@ -274,15 +275,14 @@ export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows
   }, [messages]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Summarize ──────────────────────────────────────────────────
-  const isReady = provider === "vertex" || provider === "claude-cli" || !!apiKey;
+  const isReady = provider === "claude-cli" || !!apiKey;
 
   const doSummarize = useCallback(async (clearAfter: boolean) => {
     if (!isReady || messages.length === 0) return;
     try {
       const res = await maxSummarize({
         api_key: apiKey,
-        provider: provider as any,
-        vertex_region: vertexRegion,
+        provider,
         messages,
         existing_summary: sessionSummary || undefined,
       });
@@ -391,7 +391,7 @@ export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows
 
     try {
       await streamMaxChat(
-        { api_key: apiKey, provider: provider as any, vertex_region: vertexRegion, messages: newMessages, context: { ...activeContext, session_summary: sessionSummary || undefined }, model_family: modelFamily },
+        { api_key: apiKey, provider, messages: newMessages, context: { ...activeContext, session_summary: sessionSummary || undefined }, model_family: modelFamily },
         (chunk) => {
           setMessages((prev) => {
             const last = prev[prev.length - 1];
@@ -401,9 +401,11 @@ export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows
         },
         abort.signal,
       );
+      setCliAuth("ok");
     } catch (err) {
       if ((err as Error).name !== "AbortError") {
         const msg = err instanceof Error ? err.message : String(err);
+        if (provider === "claude-cli" && /authenticat|oauth|log ?in|logged/i.test(msg)) setCliAuth("needed");
         setMessages((prev) => {
           const last = prev[prev.length - 1];
           if (last?.role !== "assistant") return prev;
@@ -419,7 +421,7 @@ export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows
       // canvas and then have to undo it.
       applyPendingBlocks();
     }
-  }, [input, pendingImages, messages, apiKey, activeContext, sessionSummary, provider, vertexRegion, isReady, applyPendingBlocks]);
+  }, [input, pendingImages, messages, apiKey, activeContext, sessionSummary, provider, isReady, applyPendingBlocks]);
 
   const handleStop    = useCallback(() => abortRef.current?.abort(), []);
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -530,7 +532,7 @@ export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows
         <>
           {/* Messages */}
           <div className="max-messages">
-            {!isReady && <div className="max-no-key">{provider === "vertex" ? "Configure Google Vertex AI in Settings (gear icon) to use Max." : provider === "claude-cli" ? "Claude Code provider selected — click Test Connection in Settings to verify." : "Enter your Anthropic API key in Settings (gear icon) to use Max."}</div>}
+            {!isReady && <div className="max-no-key">Enter your Anthropic API key in Settings (gear icon), or switch to Claude Code, to use Max.</div>}
             {recap && (
               <div className="max-recap">
                 <div className="max-recap-header">
@@ -580,6 +582,39 @@ export default function MaxPanel({ context, mode = "tab", onPopOut, onApplyFlows
 
           {/* Inner sash */}
           <div className="max-inner-sash" onMouseDown={onInnerSashMouseDown} title="Drag to resize input area" />
+
+          {/* Claude Code sign-in prompt */}
+          {provider === "claude-cli" && cliAuth !== "ok" && (
+            <div className={`max-auth-bar max-auth-bar--${cliAuth}`}>
+              <span>
+                {cliAuth === "needed"  && "Your Claude Code sign-in has expired."}
+                {cliAuth === "working" && "Finish signing in in your browser…"}
+                {cliAuth === "done"    && "Signed in. Resend your message."}
+                {cliAuth === "failed"  && `Sign-in failed: ${cliAuthError}`}
+              </span>
+              {(cliAuth === "needed" || cliAuth === "failed") && (
+                <button
+                  className="max-auth-btn"
+                  onClick={async () => {
+                    setCliAuth("working");
+                    try {
+                      const res = await maxCliLogin();
+                      setCliAuthError(res.error ?? "");
+                      setCliAuth(res.success ? "done" : "failed");
+                    } catch (err) {
+                      setCliAuthError(err instanceof Error ? err.message : String(err));
+                      setCliAuth("failed");
+                    }
+                  }}
+                >
+                  Sign in to Claude
+                </button>
+              )}
+              {cliAuth !== "working" && (
+                <button className="max-auth-dismiss" onClick={() => setCliAuth("ok")} title="Dismiss">✕</button>
+              )}
+            </div>
+          )}
 
           {/* Pending images */}
           {pendingImages.length > 0 && (

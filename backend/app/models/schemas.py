@@ -140,8 +140,7 @@ class MaxContext(BaseModel):
 
 class MaxChatRequest(BaseModel):
     api_key: str = ""
-    provider: str = "anthropic"       # "anthropic" | "vertex"
-    vertex_region: str = "us-east5"   # only used when provider="vertex"
+    provider: str = "anthropic"       # "anthropic" | "claude-cli"
     messages: list[MaxMessage]
     context: MaxContext = MaxContext()
     # "opus" | "sonnet" — the exact model is resolved server-side to the newest
@@ -152,7 +151,6 @@ class MaxChatRequest(BaseModel):
 class MaxSummarizeRequest(BaseModel):
     api_key: str = ""
     provider: str = "anthropic"
-    vertex_region: str = "us-east5"
     messages: list[MaxMessage]
     existing_summary: str | None = None
 
@@ -164,10 +162,31 @@ class MaxSummarizeResponse(BaseModel):
 class MaxTestRequest(BaseModel):
     provider: str = "anthropic"
     api_key: str = ""
-    vertex_region: str = "us-east5"
 
 
 class MaxTestResponse(BaseModel):
     success: bool
     error: str = ""
     project_id: str = ""   # echoed back so user can see what was detected
+
+
+# ── Secure properties ───────────────────────────────────────────────────────────
+
+class SecurePropsRequest(BaseModel):
+    operation: str            # "encrypt" | "decrypt"
+    environment: str          # names the key to use (resolved server-side)
+    algorithm: str = "AES"    # AES | Blowfish | DES | DESede | RC2 | RCA
+    mode: str = "CBC"         # CBC | CFB | ECB | OFB
+    use_random_iv: bool = True
+    value: str
+
+
+class SecurePropsResponse(BaseModel):
+    success: bool
+    output: str = ""
+    error: str = ""
+
+
+class SecurePropsEnvsResponse(BaseModel):
+    environments: list[str] = []
+    error: str = ""

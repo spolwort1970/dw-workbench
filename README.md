@@ -9,6 +9,7 @@ A local DataWeave workbench with a Mule-style flow simulator. Designed for reaso
 - **Script Console** — run DataWeave scripts locally against a payload using the DW CLI. Three-panel layout: payload | script | output.
 - **Flow Analyzer** — visual left-to-right flow canvas modeled after Anypoint Studio. Drag, configure, and execute Mule-style processor flows. Inspect per-node input/output state. Step through flows in debug mode.
 - **Notes** — markdown scratchpad per project.
+- **Secure Properties** — encrypt/decrypt MuleSoft secure config values locally (AES/Blowfish/DES/DESede/RC2/RCA; CBC/CFB/ECB/OFB; optional random IV). Per-environment keys live in a local, gitignored config — never committed.
 
 ## What It Is Not
 
@@ -98,6 +99,24 @@ npm run dev   # http://localhost:5173
 ### DW CLI (dev mode)
 The DW CLI must be installed and available on `PATH` as `dw`. Download from [MuleSoft](https://docs.mulesoft.com/dataweave/latest/dataweave-cli). In the packaged app it is downloaded automatically.
 
+### Secure Properties config (first-time setup)
+
+The **Secure Properties** tab shells out to the MuleSoft Secure Properties Tool JAR using per-environment keys. Keys are **never committed and never bundled into the build** — every person who uses the tab sets it up once on their own machine:
+
+1. **Install Java 17+** and make sure `java` is on your `PATH`. On Windows: `winget install EclipseAdoptium.Temurin.17.JDK`, then open a new terminal and check `java -version`. (Anypoint Studio ships its own JDK, but it usually isn't on `PATH`.)
+2. **Download the Secure Properties Tool JAR** (Java 17 build, `secure-properties-tool-j17.jar`) from the MuleSoft *Secure Configuration Properties* docs page. Save it anywhere, e.g. `C:\Mule_Secure_Props\`.
+3. **Create your config** by copying `backend/secure_props_config.example.json` to `secure_props_config.json` in the location below. Fill in your per-environment keys and set `jar_path` to where you saved the JAR (forward slashes or doubled backslashes — it's JSON). Remove any environments you don't use.
+
+| Running | Config location |
+|---|---|
+| Packaged app (Windows) | `%APPDATA%\dw-workbench\secure_props_config.json` |
+| Packaged app (macOS) | `~/Library/Application Support/dw-workbench/secure_props_config.json` |
+| Dev mode | `backend/secure_props_config.json` (gitignored) |
+
+Restart the app after creating or editing the config. The environment picker lists whatever environments the config defines; if it's empty, the config is missing or in the wrong folder.
+
+The frontend only ever receives environment *names* — key values stay server-side and never touch the repo or the build. In the packaged app, Electron points the backend at the app-data config via `SECURE_PROPS_CONFIG`.
+
 ---
 
 ## Getting Started
@@ -108,9 +127,19 @@ The DW CLI must be installed and available on `PATH` as `dw`. Download from [Mul
    - Click the gear icon (⚙️) in the top-right
    - Expand "AI (Max)"
    - Choose a provider:
-     - **Claude Code** (recommended at work) — uses your existing Claude Code authentication, no API key needed
+     - **Claude Code** (recommended at work) — uses your existing Claude Code authentication, no API key needed. Requires the Claude Code CLI (`npm install -g @anthropic-ai/claude-code`), signed in once with `claude auth login`.
      - **Anthropic API** (recommended at home) — enter your API key from https://console.anthropic.com/
-   - Click "Test Connection" to verify
+   - Click "Test Connection" to verify. If it fails, the real error is shown (for example an expired sign-in).
+
+**If your Claude Code sign-in expires:**
+
+Claude Code sign-ins expire from time to time. When that happens, Max shows the error in the chat and a red bar appears above the input: *"Your Claude Code sign-in has expired."* You don't need to leave the app:
+
+1. Click **Sign in to Claude** in the bar.
+2. Your browser opens the Claude sign-in page — sign in there. The bar reads *"Finish signing in in your browser…"* while it waits (up to 5 minutes).
+3. When the bar turns green (*"Signed in. Resend your message."*), send your message again.
+
+If sign-in fails, the bar shows why and the button stays so you can retry. If the browser page asks you to paste a code instead of finishing on its own, open a terminal and run `claude auth login` there instead. You can check your status any time with `claude auth status`.
 
 **Using Max:**
 - Open the **Max** tab to chat with the AI assistant
@@ -202,6 +231,14 @@ The DW CLI must be installed and available on `PATH` as `dw`. Download from [Mul
 - localStorage autosave for browser-refresh recovery
 - File menu: New, Open, Save, Save As, Recent Projects
 - Project holds both Script Console state and Flow Analyzer state
+
+### Secure Properties
+- Encrypt or decrypt individual MuleSoft secure config values (string mode)
+- Algorithms: AES, Blowfish, DES, DESede, RC2, RCA
+- Modes: CBC, CFB, ECB, OFB (random-IV toggle; auto-disabled for ECB)
+- Environment picker — the matching key is resolved server-side; the UI never sees key values
+- Encrypt output is wrapped in the `![...]` marker ready for YAML/properties; decrypt accepts values with or without the brackets
+- Runs the MuleSoft Secure Properties Tool JAR locally (requires `java` on `PATH`); keys read from a local gitignored config (see setup above)
 
 ---
 

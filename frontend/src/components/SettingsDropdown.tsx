@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { THEMES, type ThemeOption } from "../monacoThemes";
 import { maxTestConnection } from "../services/api";
-import { MODEL_FAMILIES, type MaxProvider, type MaxModelFamily } from "../types/max";
+import { MODEL_FAMILIES, readProvider, type MaxProvider, type MaxModelFamily } from "../types/max";
 
 export const FONT_SIZES = [
   { label: "Small",  value: 13 },
@@ -23,7 +23,7 @@ export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFon
   const [fontExpanded, setFontExpanded] = useState(false);
   const [aiExpanded, setAiExpanded] = useState(false);
   const [apiKey, setApiKey]           = useState(() => localStorage.getItem("dw-max-api-key") ?? "");
-  const [provider, setProvider]       = useState<MaxProvider>(() => (localStorage.getItem("dw-max-provider") as MaxProvider) ?? "anthropic");
+  const [provider, setProvider]       = useState<MaxProvider>(readProvider);
   const [modelFamily, setModelFamily] = useState<MaxModelFamily>(() => (localStorage.getItem("dw-max-model-family") as MaxModelFamily) ?? "sonnet");
   const [testStatus, setTestStatus]   = useState<"idle" | "testing" | "ok" | "err">("idle");
   const [testMsg, setTestMsg]         = useState("");
@@ -149,7 +149,7 @@ export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFon
               </div>
 
               {provider === "claude-cli" && (
-                <p className="ai-vertex-note">
+                <p className="ai-provider-note">
                   Signs in with your Claude account through the Claude Code CLI. No API key required.
                 </p>
               )}
@@ -190,7 +190,7 @@ export default function SettingsDropdown({ theme, onThemeChange, fontSize, onFon
                   >{f.label}</button>
                 ))}
               </div>
-              <p className="ai-vertex-note">
+              <p className="ai-provider-note">
                 {MODEL_FAMILIES.find((f) => f.value === modelFamily)?.hint} — always the latest release.
               </p>
 

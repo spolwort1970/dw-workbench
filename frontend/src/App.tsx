@@ -10,6 +10,7 @@ import ImportExport, { type WorkspaceState } from "./components/ImportExport";
 import FileMenu from "./components/FileMenu";
 import FlowCanvas, { type FlowCanvasHandle } from "./components/flow/FlowCanvas";
 import MaxPanel, { MAX_APPLY_CHANNEL, type ApplyFlowsMessage } from "./components/MaxPanel";
+import SecurePropertiesPanel from "./components/SecurePropertiesPanel";
 import ErrorHintsModal from "./components/ErrorHintsModal";
 import MimeTypeDropdown, { MIME_TYPES, type MimeTypeOption } from "./components/MimeTypeDropdown";
 import { registerThemes, isLightTheme, getThemeBg } from "./monacoThemes";
@@ -30,9 +31,19 @@ import type { FlowCanvasState, FlowDef } from "./types/flow";
 import "./App.css";
 
 const MIN_COL_WIDTH = 300;
+const DEFAULT_COL_FRAC = 0.25;
+
+/** A side column's saved share of the window width, or the default. */
+function readColFrac(key: string): number {
+  try {
+    const v = parseFloat(localStorage.getItem(key) ?? "");
+    if (v > 0.05 && v < 0.45) return v;
+  } catch { /* non-critical */ }
+  return DEFAULT_COL_FRAC;
+}
 const PAYLOAD_COLLAPSED_WIDTH = 52;
 
-type Tab = "script" | "flow" | "max" | "notes";
+type Tab = "script" | "flow" | "max" | "notes" | "secure";
 
 function StandaloneMax() {
   const [theme, setTheme] = useState(() => localStorage.getItem("dw-theme") ?? "vs-dark");
@@ -135,10 +146,21 @@ function AppInner() {
       prev.replace(/^output\s+\S+/m, `output ${option.value}`)
     );
   }, []);
-  const [payloadWidth, setPayloadWidth] = useState(() => Math.floor(window.innerWidth * 0.25));
+  // Side columns are sized as a share of the window, not fixed pixels. The first
+  // render happens before Electron maximizes the window, so a pixel width taken then
+  // would leave the columns sized for the smaller pre-maximize window.
+  const [windowWidth, setWindowWidth] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const onResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const [payloadFrac, setPayloadFrac] = useState(() => readColFrac("dw-payload-frac"));
   const [payloadCollapsed, setPayloadCollapsed] = useState(false);
-  const [outputWidth, setOutputWidth] = useState(() => Math.floor(window.innerWidth * 0.25));
+  const [outputFrac, setOutputFrac] = useState(() => readColFrac("dw-output-frac"));
   const [outputCollapsed, setOutputCollapsed] = useState(false);
+  const payloadWidth = Math.max(MIN_COL_WIDTH, Math.floor(windowWidth * payloadFrac));
+  const outputWidth = Math.max(MIN_COL_WIDTH, Math.floor(windowWidth * outputFrac));
 
   const [editorTheme, setEditorTheme] = useState(
     () => localStorage.getItem("dw-theme") ?? "vs-dark"
@@ -570,34 +592,40 @@ function AppInner() {
     e.preventDefault();
     const startX = e.clientX;
     const startWidth = payloadWidth;
+    let frac = payloadFrac;
     const onMove = (me: MouseEvent) => {
       const delta = me.clientX - startX;
-      setPayloadWidth(Math.max(MIN_COL_WIDTH, startWidth + delta));
+      frac = Math.max(MIN_COL_WIDTH, startWidth + delta) / window.innerWidth;
+      setPayloadFrac(frac);
     };
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      try { localStorage.setItem("dw-payload-frac", String(frac)); } catch { /* non-critical */ }
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-  }, [payloadWidth]);
+  }, [payloadWidth, payloadFrac]);
 
   // Drag: script <-> output divider
   const onOutputDividerMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     const startX = e.clientX;
     const startWidth = outputWidth;
+    let frac = outputFrac;
     const onMove = (me: MouseEvent) => {
       const delta = startX - me.clientX;
-      setOutputWidth(Math.max(MIN_COL_WIDTH, startWidth + delta));
+      frac = Math.max(MIN_COL_WIDTH, startWidth + delta) / window.innerWidth;
+      setOutputFrac(frac);
     };
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      try { localStorage.setItem("dw-output-frac", String(frac)); } catch { /* non-critical */ }
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-  }, [outputWidth]);
+  }, [outputWidth, outputFrac]);
 
   const handleRun = useCallback(async () => {
     setFetchError(null);
@@ -685,6 +713,13 @@ function AppInner() {
           title="Supports Markdown preview. Great for documenting transformation intent and providing context to AI assistants."
         >
           Notes
+        </button>
+        <button
+          className={`tab ${activeTab === "secure" ? "tab--active" : ""}`}
+          onClick={() => setActiveTab("secure")}
+          title="Encrypt and decrypt MuleSoft secure property values locally, using per-environment keys held on this machine."
+        >
+          Secure Properties
         </button>
         <button
           className="tab tab--about"
@@ -900,6 +935,8 @@ function AppInner() {
           )}
         </div>
       )}
+
+      {activeTab === "secure" && <SecurePropertiesPanel />}
 
       {hintsOpen && <ErrorHintsModal onClose={() => setHintsOpen(false)} />}
     </div>

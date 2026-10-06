@@ -22,7 +22,13 @@ export interface MaxContext {
   project_prefs?: string;
 }
 
-export type MaxProvider = "anthropic" | "vertex" | "claude-cli";
+export type MaxProvider = "anthropic" | "claude-cli";
+
+/** Saved provider, falling back to "anthropic" for unknown values (e.g. the retired "vertex"). */
+export function readProvider(): MaxProvider {
+  const saved = localStorage.getItem("dw-max-provider");
+  return saved === "claude-cli" ? "claude-cli" : "anthropic";
+}
 
 /** The user picks a family; the backend resolves it to the newest model in it. */
 export type MaxModelFamily = "sonnet" | "opus";
@@ -35,7 +41,6 @@ export const MODEL_FAMILIES: { value: MaxModelFamily; label: string; hint: strin
 export interface MaxChatRequest {
   api_key?: string;
   provider?: MaxProvider;
-  vertex_region?: string;
   messages: MaxMessage[];
   context?: MaxContext;
   model_family?: MaxModelFamily;
@@ -44,7 +49,6 @@ export interface MaxChatRequest {
 export interface MaxSummarizeRequest {
   api_key?: string;
   provider?: MaxProvider;
-  vertex_region?: string;
   messages: MaxMessage[];
   existing_summary?: string;
 }
@@ -56,7 +60,6 @@ export interface MaxSummarizeResponse {
 export interface MaxTestRequest {
   provider: MaxProvider;
   api_key?: string;
-  vertex_region?: string;
 }
 
 export interface MaxTestResponse {

@@ -128,10 +128,10 @@ export async function streamMaxChat(
       if (!line.startsWith("data: ")) continue;
       const data = line.slice(6);
       if (data === "[DONE]") return;
-      try {
-        const parsed = JSON.parse(data);
-        if (parsed.text) onChunk(parsed.text);
-      } catch { /* ignore malformed chunk */ }
+      let parsed: { text?: string; error?: string };
+      try { parsed = JSON.parse(data); } catch { continue; /* ignore malformed chunk */ }
+      if (parsed.error) throw new Error(parsed.error);
+      if (parsed.text) onChunk(parsed.text);
     }
   }
 }
@@ -146,6 +146,13 @@ export async function maxSummarize(req: MaxSummarizeRequest): Promise<MaxSummari
   return res.json();
 }
 
+/** Opens the browser sign-in for the Claude Code CLI; resolves once it finishes. */
+export async function maxCliLogin(): Promise<MaxTestResponse> {
+  const res = await fetch(`${BASE_URL}/max/cli-login`, { method: "POST" });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
 export async function maxTestConnection(req: MaxTestRequest): Promise<MaxTestResponse> {
   const res = await fetch(`${BASE_URL}/max/test-connection`, {
     method: "POST",
@@ -154,4 +161,43 @@ export async function maxTestConnection(req: MaxTestRequest): Promise<MaxTestRes
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
   return res.json();
+}
+
+// ── Secure properties ───────────────────────────────────────────────────────────
+
+export interface SecurePropsRequest {
+  operation: "encrypt" | "decrypt";
+  environment: string;
+  algorithm: string;
+  mode: string;
+  use_random_iv: boolean;
+  value: string;
+}
+
+export interface SecurePropsResponse {
+  success: boolean;
+  output: string;
+  error: string;
+}
+
+export async function secureProperties(req: SecurePropsRequest): Promise<SecurePropsResponse> {
+  const res = await fetch(`${BASE_URL}/secure-properties`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  return res.json();
+}
+
+export interface SecurePropsEnvs {
+  environments: string[];
+  error: string;
+}
+
+export async function getSecurePropsEnvs(): Promise<SecurePropsEnvs> {
+  const res = await fetch(`${BASE_URL}/secure-properties/envs`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+  return { environments: data.environments ?? [], error: data.error ?? "" };
 }

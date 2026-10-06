@@ -1,4 +1,4 @@
-"""Max AI assistant — streaming chat and summarization via Anthropic API, Google Vertex AI, or Claude Code CLI."""
+"""Max AI assistant — streaming chat and summarization via Anthropic API or Claude Code CLI."""
 from __future__ import annotations
 
 import asyncio
@@ -119,7 +119,7 @@ def _family_of(model_id: str) -> str | None:
     return None
 
 
-async def resolve_model(family: str, provider: str, api_key: str, vertex_region: str) -> str:
+async def resolve_model(family: str, provider: str, api_key: str) -> str:
     """Newest model ID in `family`, falling back to a pinned known-good ID."""
     family = family if family in MODEL_FAMILIES else "sonnet"
     fallback = FAMILY_FALLBACK[family]
@@ -133,7 +133,7 @@ async def resolve_model(family: str, provider: str, api_key: str, vertex_region:
         return cached[1]
 
     try:
-        client, _ = _make_client(provider, api_key, vertex_region)
+        client = _make_client(api_key)
         listing = await client.models.list()
         matches = [m for m in listing.data if _family_of(m.id) == family]
         if matches:
@@ -262,33 +262,11 @@ Rules for both block types:
   so include that flow in the same block when you reference one you are creating."""
 
 
-def _gcloud_project() -> str | None:
-    """Auto-detect the active GCP project from gcloud config."""
-    try:
-        result = subprocess.run(
-            ["gcloud", "config", "get-value", "project"],
-            capture_output=True, text=True, timeout=5,
-        )
-        project = result.stdout.strip()
-        return project if project and project != "(unset)" else None
-    except Exception:
-        return None
-
-
-def _make_client(provider: str, api_key: str, vertex_region: str):
-    """Return the appropriate Anthropic async client."""
-    if provider == "vertex":
-        project_id = _gcloud_project()
-        if not project_id:
-            raise RuntimeError(
-                "Could not detect GCP project from gcloud. "
-                "Ensure gcloud is installed and 'gcloud auth application-default login' has been run."
-            )
-        return anthropic.AsyncAnthropicVertex(project_id=project_id, region=vertex_region), project_id
-    else:
-        if not api_key:
-            raise RuntimeError("Anthropic API key is required.")
-        return anthropic.AsyncAnthropic(api_key=api_key), None
+def _make_client(api_key: str):
+    """Return an Anthropic async client for the API-key provider."""
+    if not api_key:
+        raise RuntimeError("Anthropic API key is required.")
+    return anthropic.AsyncAnthropic(api_key=api_key)
 
 
 def _build_system(req: MaxChatRequest, model_id: str | None = None) -> str:
@@ -301,7 +279,6 @@ def _build_system(req: MaxChatRequest, model_id: str | None = None) -> str:
         label = {"opus": "Claude Opus", "sonnet": "Claude Sonnet"}.get(family or "", "Claude")
         via = {
             "claude-cli": "the user's Claude account via the Claude Code CLI",
-            "vertex":     "Google Vertex AI",
         }.get(req.provider, "the Anthropic API")
         parts.append(
             f"\n## Your model\n"
@@ -383,14 +360,14 @@ def _convert_messages(req: MaxChatRequest) -> list[dict]:
 
 async def stream_chat(req: MaxChatRequest) -> AsyncIterator[str]:
     """Yield SSE-formatted text chunks from Claude."""
-    model = await resolve_model(req.model_family, req.provider, req.api_key, req.vertex_region)
+    model = await resolve_model(req.model_family, req.provider, req.api_key)
 
     if req.provider == "claude-cli":
         async for chunk in _cli_stream_chat(req, model):
             yield chunk
         return
 
-    client, _ = _make_client(req.provider, req.api_key, req.vertex_region)
+    client = _make_client(req.api_key)
     system   = _build_system(req, model)
     messages = _convert_messages(req)
 
@@ -479,7 +456,15 @@ async def _cli_stream_chat(req: MaxChatRequest, model: str) -> AsyncIterator[str
     await proc.stdin.drain()
     proc.stdin.close()   # signals end of prompt; the CLI waits for EOF otherwise
 
-    assert proc.stdout is not None
+    assert proc.stdout is not None and proc.stderr is not None
+
+    # Drain stderr alongside stdout so a chatty stderr can't fill its pipe and stall the CLI.
+    stderr_task = asyncio.create_task(proc.stderr.read())
+
+    # The CLI reports failures such as an expired login on stdout — as plain text or
+    # an is_error result event — so keep them to show the user instead of a blank reply.
+    got_text = False
+    failure: list[str] = []
 
     async for raw_line in proc.stdout:
         line = raw_line.decode("utf-8", errors="replace").strip()
@@ -487,16 +472,24 @@ async def _cli_stream_chat(req: MaxChatRequest, model: str) -> AsyncIterator[str
             continue
         try:
             event = json.loads(line)
-            if event.get("type") == "stream_event":
-                inner = event.get("event", {})
-                if inner.get("type") == "content_block_delta":
-                    delta = inner.get("delta", {})
-                    if delta.get("type") == "text_delta" and delta.get("text"):
-                        yield f"data: {json.dumps({'text': delta['text']})}\n\n"
         except json.JSONDecodeError:
-            pass
+            failure.append(line)
+            continue
+        if event.get("type") == "stream_event":
+            inner = event.get("event", {})
+            if inner.get("type") == "content_block_delta":
+                delta = inner.get("delta", {})
+                if delta.get("type") == "text_delta" and delta.get("text"):
+                    got_text = True
+                    yield f"data: {json.dumps({'text': delta['text']})}\n\n"
+        elif event.get("type") == "result" and event.get("is_error"):
+            failure.append(str(event.get("result") or ""))
 
+    stderr = (await stderr_task).decode("utf-8", errors="replace").strip()
     await proc.wait()
+    if not got_text and (proc.returncode != 0 or failure):
+        detail = "\n".join(m for m in [*failure, stderr] if m) or f"exit code {proc.returncode}"
+        yield f"data: {json.dumps({'error': f'Claude Code CLI failed: {detail}'})}\n\n"
     yield "data: [DONE]\n\n"
 
 
@@ -536,7 +529,7 @@ async def summarize(req: MaxSummarizeRequest) -> str:
         stdout, _ = await proc.communicate(prompt.encode("utf-8"))
         return stdout.decode("utf-8", errors="replace").strip()
 
-    client, _ = _make_client(req.provider, req.api_key, req.vertex_region)
+    client = _make_client(req.api_key)
     response = await client.messages.create(
         model=SUMMARY_MODEL,
         max_tokens=512,
@@ -545,7 +538,36 @@ async def summarize(req: MaxSummarizeRequest) -> str:
     return response.content[0].text
 
 
-async def test_connection(provider: str, api_key: str, vertex_region: str) -> tuple[bool, str, str]:
+async def cli_login() -> tuple[bool, str]:
+    """
+    Run `claude auth login`, which opens the browser sign-in and returns once it
+    completes. Returns (success, error_message).
+    """
+    cli = _find_claude_cli()
+    if not cli:
+        return False, "Claude Code CLI not found."
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *_cli_command(cli), "auth", "login",
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            creationflags=_SUBPROCESS_FLAGS,
+        )
+    except Exception as e:
+        return False, str(e)
+    try:
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=300)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        return False, "Sign-in timed out after 5 minutes. Try again."
+    if proc.returncode == 0:
+        return True, ""
+    return False, stdout.decode("utf-8", errors="replace").strip() or f"exit code {proc.returncode}"
+
+
+async def test_connection(provider: str, api_key: str) -> tuple[bool, str, str]:
     """Test connectivity. Returns (success, error_message, project_id)."""
     if provider == "claude-cli":
         try:
@@ -563,20 +585,23 @@ async def test_connection(provider: str, api_key: str, vertex_region: str) -> tu
                 stderr=asyncio.subprocess.PIPE,
                 creationflags=_SUBPROCESS_FLAGS,
             )
-            _, stderr = await proc.communicate()
+            stdout, stderr = await proc.communicate()
             if proc.returncode == 0:
                 return True, "", "Claude Code CLI"
-            return False, stderr.decode("utf-8", errors="replace").strip() or "Unknown error", ""
+            # Auth failures (e.g. an expired login) come back on stdout, not stderr.
+            detail = (stderr.decode("utf-8", errors="replace").strip()
+                      or stdout.decode("utf-8", errors="replace").strip())
+            return False, detail or "Unknown error", ""
         except Exception as e:
             return False, str(e), ""
 
     try:
-        client, project_id = _make_client(provider, api_key, vertex_region)
+        client = _make_client(api_key)
         await client.messages.create(
             model=SUMMARY_MODEL,
             max_tokens=5,
             messages=[{"role": "user", "content": "hi"}],
         )
-        return True, "", project_id or ""
+        return True, "", ""
     except Exception as e:
         return False, str(e), ""

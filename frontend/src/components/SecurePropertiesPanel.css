@@ -1,0 +1,147 @@
+.secure-props {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--bg-base);
+}
+
+.secure-props__inner {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 0 40px;
+}
+
+.secure-props__intro {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  padding: 14px 16px 0;
+}
+
+.secure-props__form {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sp-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.sp-row > .config-field {
+  flex: 1;
+  min-width: 150px;
+  margin-bottom: 0;
+}
+
+/* Encrypt / Decrypt segmented control */
+.sp-seg-group {
+  display: inline-flex;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px;
+  gap: 3px;
+}
+.sp-seg {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 18px;
+  border-radius: 4px;
+  transition: background 0.1s, color 0.1s;
+}
+.sp-seg:hover { color: var(--text); }
+.sp-seg--active { background: var(--accent); color: #fff; }
+
+/* Random IV checkbox */
+.sp-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+.sp-check input { cursor: pointer; }
+.sp-check--disabled { opacity: 0.45; cursor: default; }
+
+.secure-props textarea.sp-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+  font-size: 12.5px;
+  padding: 10px 12px;
+  min-height: 90px;
+  resize: vertical;
+  outline: none;
+}
+.secure-props textarea.sp-input:focus { border-color: var(--accent); }
+
+.sp-run {
+  align-self: flex-start;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 26px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.sp-run:hover:not(:disabled) { opacity: 0.88; }
+.sp-run:disabled { opacity: 0.45; cursor: default; }
+
+.sp-result {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.sp-result--error { border-color: var(--error); }
+
+.sp-result__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 10px;
+  background: var(--bg-deep);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.sp-result--error .sp-result__head { color: var(--error); }
+
+.sp-result__body {
+  padding: 10px 12px;
+  background: var(--bg-deep);
+  font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--success);
+  line-height: 1.5;
+}
+.sp-result--error .sp-result__body { color: var(--error); }
+
+.sp-banner {
+  font-size: 12.5px;
+  color: var(--error);
+  background: var(--bg-surface);
+  border: 1px solid var(--error);
+  border-radius: 6px;
+  padding: 10px 12px;
+  line-height: 1.5;
+}

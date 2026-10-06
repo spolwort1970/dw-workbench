@@ -257,11 +257,20 @@ function startBackend(dwCliPath) {
     return;
   }
 
+  // Secure Properties tab: keys live in a per-machine config under userData
+  // (never in the repo or the packaged build). The user creates/edits this file
+  // once with their per-environment keys and JAR path. If a JAR is shipped as an
+  // extra resource, point at it too; otherwise the config's jar_path is used.
+  const securePropsConfig = path.join(app.getPath("userData"), "secure_props_config.json");
+  const bundledJar = path.join(process.resourcesPath, "secure-properties-tool.jar");
+
   const env = {
     ...process.env,
     DW_PORT: String(PORT),
     DW_NONCE: backendNonce,
     ...(dwCliPath ? { DW_CLI: dwCliPath } : {}),
+    SECURE_PROPS_CONFIG: securePropsConfig,
+    ...(fs.existsSync(bundledJar) ? { SECURE_PROPS_JAR: bundledJar } : {}),
   };
 
   backendProcess = spawn(exePath, [], {
