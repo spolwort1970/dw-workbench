@@ -120,7 +120,7 @@ jobs:
       run: |
         $ProgressPreference = 'SilentlyContinue'
         Compress-Archive -Path 'electron/dist/DW Workbench-win32-x64' `
-          -DestinationPath 'DW-Workbench-${{ steps.ver.outputs.tag }}-win32-x64.zip' -Force
+          -DestinationPath 'DW-Workbench-win32-x64.zip' -Force
 
     - name: Create the GitHub Release
       env:
@@ -129,8 +129,8 @@ jobs:
         cat > release-notes.md <<'NOTES'
         ## Install (Windows 10/11, x64)
 
-        1. Download **DW-Workbench-…-win32-x64.zip** below and extract it anywhere.
-        2. Run **DW Workbench.exe** in the extracted folder.
+        1. Download **DW-Workbench-win32-x64.zip** below (not "Source code") and extract it anywhere.
+        2. Open the extracted **DW Workbench-win32-x64** folder and run **DW Workbench.exe**.
         3. On first launch the app downloads the DataWeave CLI (needs internet access to github.com).
 
         The app isn't code-signed yet, so Windows SmartScreen may warn on first run — click **More info → Run anyway**.
@@ -140,7 +140,7 @@ jobs:
         # gh creates the tag on this commit as part of the release, so a failed run
         # never leaves a tag behind. GitHub's API occasionally answers 5xx, so retry.
         TAG="${{ steps.ver.outputs.tag }}"
-        ZIP="DW-Workbench-${TAG}-win32-x64.zip"
+        ZIP="DW-Workbench-win32-x64.zip"
         for attempt in 1 2 3 4; do
           gh release delete "$TAG" --yes >/dev/null 2>&1 || true   # drop a half-made draft; keeps the tag
           if gh release create "$TAG" "$ZIP" \

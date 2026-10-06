@@ -2,9 +2,9 @@
 
 A local DataWeave workbench with a Mule-style flow simulator. Designed for reasoning about DataWeave scripts and Mule flow logic offline, without needing Anypoint Studio or a running Mule runtime.
 
-### ⬇️ [Download the latest release](https://github.com/spolwort1970/dw-workbench/releases/latest)
+### ⬇️ [Download DW Workbench for Windows](https://github.com/spolwort1970/dw-workbench/releases/latest/download/DW-Workbench-win32-x64.zip)
 
-Windows 10/11 (x64). On the release page, scroll to **Assets** and download **`DW-Workbench-v…-win32-x64.zip`**, extract it, and run **`DW Workbench.exe`**. No install and no GitHub account needed. Windows SmartScreen may warn on first run because the app isn't code-signed yet — click **More info → Run anyway**.
+That link always downloads the newest version. Extract the zip, open the **DW Workbench-win32-x64** folder, and run **`DW Workbench.exe`** — no install and no GitHub account needed. Windows 10/11 (x64). ([Release notes](https://github.com/spolwort1970/dw-workbench/releases/latest)) Windows SmartScreen may warn on first run because the app isn't code-signed yet — click **More info → Run anyway**.
 
 ---
 
@@ -41,7 +41,7 @@ Windows 10/11 (x64). On the release page, scroll to **Assets** and download **`D
 
 DW Workbench is a **Windows-only** app (Windows 10/11, x64).
 
-**Download:** grab the latest release from https://github.com/spolwort1970/dw-workbench/releases/latest — download `DW-Workbench-v…-win32-x64.zip`, extract it, and run `DW Workbench.exe`. No GitHub account needed. The app isn't code-signed yet, so Windows SmartScreen may warn on first run; click **More info → Run anyway**.
+**Download:** grab the latest release from https://github.com/spolwort1970/dw-workbench/releases/latest — download `DW-Workbench-win32-x64.zip` (not "Source code"), extract it, and run `DW Workbench.exe`. No GitHub account needed. The app isn't code-signed yet, so Windows SmartScreen may warn on first run; click **More info → Run anyway**.
 
 **Publishing a release:** on GitHub, go to **Actions → Release → Run workflow**. Leave the version box empty to auto-number (`1.0.<run number>`) or type one like `1.2.0`. The workflow builds the app, stamps the version into the exe and the About dialog, tags the commit, and publishes the release with the zip attached.
 
