@@ -724,7 +724,7 @@ function AppInner() {
         <button
           className="tab tab--about"
           onClick={() => alert(
-            "DW Workbench v0.1.0\n\nA visual DataWeave script builder and flow analysis tool with debugging for MuleSoft API development. No IDE is required for use.\n\nBuilt with Electron, React, FastAPI, and Monaco Editor.\n\nMax AI assistant powered by Claude (Anthropic). Screenshot OCR via tesseract.js.\n\nAvailable for Windows.\n\nDesigned and built by Shane Polwort with help from Claude Code (Anthropic)\n\nDataWeave CLI © MuleSoft, a Salesforce company.\n\n© 2026 Shane Polwort. Released under the MIT License.",
+            "DW Workbench v0.1.0\n\nA visual DataWeave script builder and flow analysis tool with debugging for MuleSoft API development. No IDE is required for use.\n\nIncludes a Secure Properties tool for encrypting and decrypting MuleSoft secure configuration values locally, using the MuleSoft Secure Properties Tool (requires Java 17+).\n\nBuilt with Electron, React, FastAPI, and Monaco Editor.\n\nMax AI assistant powered by Claude (Anthropic). Screenshot OCR via tesseract.js.\n\nAvailable for Windows.\n\nDesigned and built by Shane Polwort with help from Claude Code (Anthropic)\n\nDataWeave CLI © MuleSoft, a Salesforce company.\n\n© 2026 Shane Polwort. Released under the MIT License.",
             "About DW Workbench"
           )}
           title="About DW Workbench"
