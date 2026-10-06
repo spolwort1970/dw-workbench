@@ -37,20 +37,11 @@ A local DataWeave workbench with a Mule-style flow simulator. Designed for reaso
 
 DW Workbench is a **Windows-only** app (Windows 10/11, x64).
 
-The app builds automatically on every push to `main`. To download the latest version:
+**Download:** grab the latest release from https://github.com/spolwort1970/dw-workbench/releases/latest — download `DW-Workbench-v…-win32-x64.zip`, extract it, and run `DW Workbench.exe`. No GitHub account needed. The app isn't code-signed yet, so Windows SmartScreen may warn on first run; click **More info → Run anyway**.
 
-1. Visit https://github.com/spolwort1970/dw-workbench/actions
-2. Click the most recent **green checkmark** workflow run
-3. Scroll to the bottom "Artifacts" section
-4. Download `DW-Workbench-Windows`, extract the zip, and run `DW Workbench.exe`
+**Publishing a release:** on GitHub, go to **Actions → Release → Run workflow**. Leave the version box empty to auto-number (`1.0.<run number>`) or type one like `1.2.0`. The workflow builds the app, stamps the version into the exe and the About dialog, tags the commit, and publishes the release with the zip attached.
 
-> **Note**: GitHub requires you to be signed in to download workflow artifacts.
-
-To publish a stable download link instead, create a GitHub Release:
-- Tag a version (e.g., `v0.1.0`)
-- Create a Release from that tag on the [Releases](../../releases) page
-- Upload the Windows zip as a release asset
-- Share the release URL
+Every push to `main` also runs a test build (**Actions → Build DW Workbench**); its `DW-Workbench-Windows` artifact is handy for trying unreleased changes but requires a GitHub sign-in and expires after 90 days.
 
 On first launch the app automatically downloads the DataWeave CLI from GitHub and stores it locally. Subsequent launches reuse the cached CLI.
 

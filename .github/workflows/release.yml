@@ -1,0 +1,140 @@
+name: Release
+
+# HOW TO RELEASE
+#   Actions tab -> "Release" (left sidebar) -> "Run workflow" button -> Run workflow.
+#   Leave the version box empty and it picks the next one for you.
+#
+# What it does: builds the Windows app, stamps the version into the exe and the
+# About dialog, tags the commit, and publishes a GitHub Release with the zipped
+# app attached. Share https://github.com/spolwort1970/dw-workbench/releases/latest
+# — it always points at the newest release.
+#
+# Pushing a v* tag by hand also works, if you ever prefer that.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version (leave empty to auto-number, e.g. 1.0.4)'
+        required: false
+        default: ''
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0   # need full history so tags are visible
+
+    - name: Work out the version
+      id: ver
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+      run: |
+        if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+          VERSION="${GITHUB_REF_NAME#v}"        # tag push: use the tag
+        elif [ -n "${INPUT_VERSION}" ]; then
+          VERSION="${INPUT_VERSION#v}"          # typed into the box
+        else
+          VERSION="1.0.${GITHUB_RUN_NUMBER}"    # nothing given: auto-number
+        fi
+        if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "Version must look like 1.2.3 (got '$VERSION')."
+          exit 1
+        fi
+        echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+        echo "tag=v${VERSION}"    >> "$GITHUB_OUTPUT"
+        echo "Releasing v${VERSION}"
+
+    - name: Stop if the tag already exists
+      if: github.ref_type != 'tag'
+      run: |
+        if git rev-parse "${{ steps.ver.outputs.tag }}" >/dev/null 2>&1; then
+          echo "Tag ${{ steps.ver.outputs.tag }} already exists — stopping so nothing is overwritten."
+          exit 1
+        fi
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version: '20'
+
+    - name: Setup Python
+      uses: actions/setup-python@v7
+      with:
+        python-version: '3.13'
+
+    - name: Install frontend dependencies
+      working-directory: frontend
+      run: npm ci
+
+    - name: Build frontend
+      working-directory: frontend
+      env:
+        DW_VERSION: ${{ steps.ver.outputs.version }}   # shown in the About dialog
+      run: npm run build
+
+    - name: Install backend dependencies
+      working-directory: backend
+      run: pip install -r requirements.txt pyinstaller
+
+    - name: Build backend
+      working-directory: backend
+      run: python -m PyInstaller --noconfirm server.spec
+
+    - name: Install Electron dependencies
+      working-directory: electron
+      run: npm ci
+
+    - name: Package app
+      working-directory: electron
+      run: >
+        npx electron-packager . "DW Workbench" --platform win32 --arch x64 --out dist --overwrite
+        --extra-resource ../backend/dist/server --icon icon.ico
+        --app-version ${{ steps.ver.outputs.version }} --build-version ${{ steps.ver.outputs.version }}
+
+    - name: Zip the app
+      shell: pwsh
+      run: |
+        $ProgressPreference = 'SilentlyContinue'
+        Compress-Archive -Path 'electron/dist/DW Workbench-win32-x64' `
+          -DestinationPath 'DW-Workbench-${{ steps.ver.outputs.tag }}-win32-x64.zip' -Force
+
+    - name: Tag the commit
+      if: github.ref_type != 'tag'
+      run: |
+        git config user.name  "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git tag -a "${{ steps.ver.outputs.tag }}" -m "Release ${{ steps.ver.outputs.tag }}"
+        git push origin "${{ steps.ver.outputs.tag }}"
+
+    - name: Create the GitHub Release
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        cat > release-notes.md <<'NOTES'
+        ## Install (Windows 10/11, x64)
+
+        1. Download **DW-Workbench-…-win32-x64.zip** below and extract it anywhere.
+        2. Run **DW Workbench.exe** in the extracted folder.
+        3. On first launch the app downloads the DataWeave CLI (needs internet access to github.com).
+
+        The app isn't code-signed yet, so Windows SmartScreen may warn on first run — click **More info → Run anyway**.
+
+        Optional extras: Max (the AI assistant) needs the Claude Code CLI or an Anthropic API key; the Secure Properties tab needs Java 17+ and the MuleSoft Secure Properties JAR. See the [README](https://github.com/spolwort1970/dw-workbench#readme) for setup.
+        NOTES
+        gh release create "${{ steps.ver.outputs.tag }}" \
+          --title "DW Workbench ${{ steps.ver.outputs.tag }}" \
+          --notes-file release-notes.md \
+          --generate-notes \
+          "DW-Workbench-${{ steps.ver.outputs.tag }}-win32-x64.zip"
