@@ -281,3 +281,11 @@ server.exe (PyInstaller onedir)
 ```
 
 The `About DW Workbench` dialog is available from the **Help** menu in the menu bar.
+
+---
+
+## License
+
+DW Workbench is released under the [MIT License](LICENSE). Copyright (c) 2026 Shane Polwort.
+
+The MIT License covers this repository's source code only. The DataWeave CLI that the app downloads and runs is MuleSoft's software and is governed by its own license, as are the MuleSoft Secure Properties Tool JAR and other third-party dependencies.
