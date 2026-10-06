@@ -2,6 +2,10 @@
 
 A local DataWeave workbench with a Mule-style flow simulator. Designed for reasoning about DataWeave scripts and Mule flow logic offline, without needing Anypoint Studio or a running Mule runtime.
 
+### ⬇️ [Download the latest release](https://github.com/spolwort1970/dw-workbench/releases/latest)
+
+Windows 10/11 (x64). On the release page, scroll to **Assets** and download **`DW-Workbench-v…-win32-x64.zip`**, extract it, and run **`DW Workbench.exe`**. No install and no GitHub account needed. Windows SmartScreen may warn on first run because the app isn't code-signed yet — click **More info → Run anyway**.
+
 ---
 
 ## What It Is
