@@ -226,6 +226,7 @@ If sign-in fails, the bar shows why and the button stays so you can retry. If th
 - Encrypt output is wrapped in the `![...]` marker ready for YAML/properties; decrypt accepts values with or without the brackets
 - Runs the MuleSoft Secure Properties Tool JAR locally (requires `java` on `PATH`); keys read from a local gitignored config (see setup above)
 - Built-in **Sample (test key)** environment for trying the tool with no config (public key — never for real secrets)
+- **Client Credentials Generator** at the bottom of the tab: random client ID + client secret, 16, 24, or 32 characters (letters and digits, from the browser's cryptographic RNG). Copy either value, or click **Encrypt secret** to load the secret into the encrypt form
 
 ---
 

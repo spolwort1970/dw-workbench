@@ -151,3 +151,25 @@
   background: color-mix(in srgb, var(--accent) 8%, var(--bg-surface));
 }
 
+/* Client credentials generator */
+.sp-gen {
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+}
+.sp-gen__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.sp-gen__hint {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: -8px 0 0;
+}
+.sp-result__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sp-gen .sp-seg-group { align-self: flex-start; }
