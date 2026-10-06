@@ -35,53 +35,36 @@ A local DataWeave workbench with a Mule-style flow simulator. Designed for reaso
 
 ## Distribution
 
-### For Surescripts team members
+DW Workbench is a **Windows-only** app (Windows 10/11, x64).
 
-The app builds automatically on every commit. To download the latest version:
+The app builds automatically on every push to `main`. To download the latest version:
 
-1. Visit https://github.com/Surescripts/dw-workbench/actions
+1. Visit https://github.com/spolwort1970/dw-workbench/actions
 2. Click the most recent **green checkmark** workflow run
 3. Scroll to the bottom "Artifacts" section
-4. Download:
-   - **Windows**: `DW-Workbench-Windows` — extract the zip, run `DW Workbench.exe`
-   - **macOS**: `DW-Workbench-macOS` — open the DMG, drag to Applications
+4. Download `DW-Workbench-Windows`, extract the zip, and run `DW Workbench.exe`
 
-> **Note**: You must be logged into GitHub with Surescripts repository access to download artifacts.
+> **Note**: GitHub requires you to be signed in to download workflow artifacts.
 
-### For external users
-
-External distribution requires creating a GitHub Release:
+To publish a stable download link instead, create a GitHub Release:
 - Tag a version (e.g., `v0.1.0`)
 - Create a Release from that tag on the [Releases](../../releases) page
-- Upload the Windows and macOS builds as release assets
+- Upload the Windows zip as a release asset
 - Share the release URL
 
 On first launch the app automatically downloads the DataWeave CLI from GitHub and stores it locally. Subsequent launches reuse the cached CLI.
 
 ### Build from source (optional)
 
-GitHub Actions builds both platforms automatically, but if you need to build manually:
+GitHub Actions builds the app automatically, but to build it manually on Windows:
 
 **Requirements**: Node.js 18+, Python 3.11+
 
-**Windows**:
 ```bat
 build.bat
 ```
 
-**macOS/Linux**:
-```bash
-# Frontend
-cd frontend && npm install && npm run build
-
-# Backend
-cd ../backend && pip install -r requirements.txt pyinstaller
-python -m PyInstaller --noconfirm server.spec
-
-# Electron
-cd ../electron && npm install
-npx electron-packager . "DW Workbench" --platform darwin --arch x64 --out dist --overwrite --extra-resource ../backend/dist/server
-```
+Output: `electron\dist\DW Workbench-win32-x64\` and `electron\dist\DW-Workbench-win32-x64.zip`.
 
 ### Development mode
 
@@ -109,8 +92,7 @@ The **Secure Properties** tab shells out to the MuleSoft Secure Properties Tool 
 
 | Running | Config location |
 |---|---|
-| Packaged app (Windows) | `%APPDATA%\dw-workbench\secure_props_config.json` |
-| Packaged app (macOS) | `~/Library/Application Support/dw-workbench/secure_props_config.json` |
+| Packaged app | `%APPDATA%\dw-workbench\secure_props_config.json` |
 | Dev mode | `backend/secure_props_config.json` (gitignored) |
 
 Restart the app after creating or editing the config. The environment picker lists whatever environments the config defines; if it's empty, the config is missing or in the wrong folder.
